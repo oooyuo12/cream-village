@@ -1,0 +1,120 @@
+:root {
+  --app-max-width: 1000px;
+  --app-padding-desktop: 24px;
+  --app-padding-mobile: 12px;
+  --card-radius-desktop: 16px;
+  --card-radius-mobile: 14px;
+}
+
+/* 전체 화면 기본 */
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+}
+
+/* 모바일에서 텍스트와 버튼 터치감 보정 */
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+/* 모바일 공통 */
+@media (max-width: 768px) {
+  body {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  main {
+    padding-left: var(--app-padding-mobile) !important;
+    padding-right: var(--app-padding-mobile) !important;
+  }
+
+  h1 {
+    font-size: 24px !important;
+    line-height: 1.25 !important;
+    word-break: keep-all;
+  }
+
+  h2 {
+    font-size: 19px !important;
+    line-height: 1.3 !important;
+    word-break: keep-all;
+  }
+
+  h3 {
+    font-size: 17px !important;
+    line-height: 1.35 !important;
+  }
+
+  p {
+    font-size: 14px !important;
+    line-height: 1.55 !important;
+    word-break: keep-all;
+  }
+
+  button {
+    min-height: 42px;
+  }
+
+  textarea {
+    font-size: 14px !important;
+  }
+
+  .leaflet-container {
+    touch-action: pan-x pan-y;
+  }
+
+  .mobile-scroll-x {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-full-width {
+    width: 100% !important;
+  }
+
+  .mobile-compact-card {
+    padding: 14px !important;
+    border-radius: var(--card-radius-mobile) !important;
+  }
+
+  .mobile-stack {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .mobile-two-column {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .mobile-one-column {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+}
+
+/* 아주 작은 화면 */
+@media (max-width: 420px) {
+  h1 {
+    font-size: 22px !important;
+  }
+
+  h2 {
+    font-size: 18px !important;
+  }
+
+  button {
+    font-size: 14px !important;
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "크림빌리지 반려동물 산책 어드벤처",
+  "description": "반려동물과 함께 동네를 탐험하고 추억을 기록하며 새로운 산책 루트를 발견하는 감성 어드벤처 가이드 플랫폼",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
