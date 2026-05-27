@@ -38,6 +38,8 @@ import {
   Check
 } from 'lucide-react';
 
+
+
 interface Achievement {
   id: string;
   title: string;
@@ -45,20 +47,129 @@ interface Achievement {
   description: string;
   awardedAt?: string;
 }
+const DEFAULT_CHARACTER_ID: PetCharacterType = 'mango';
+
+const DEFAULT_USER_PROFILE = {
+  level: 1,
+  exp: 15,
+  coins: 45,
+  totalStepsAccumulated: 8400,
+  badges: ['cheesy_starter', 'rose_pioneer'] as string[]
+};
+
+function getSafeCharacterId(characterId?: string | null): PetCharacterType {
+  if (
+    characterId &&
+    Object.prototype.hasOwnProperty.call(CHARACTERS, characterId)
+  ) {
+    return characterId as PetCharacterType;
+  }
+
+  return DEFAULT_CHARACTER_ID;
+}
+
+function getSafeCharacter(characterId?: string | null) {
+  return CHARACTERS[getSafeCharacterId(characterId)];
+}
+
+function normalizeUserProfile(profile: any) {
+  return {
+    ...DEFAULT_USER_PROFILE,
+    ...(profile ?? {}),
+    level: Number(profile?.level ?? DEFAULT_USER_PROFILE.level),
+    exp: Number(profile?.exp ?? DEFAULT_USER_PROFILE.exp),
+    coins: Number(profile?.coins ?? DEFAULT_USER_PROFILE.coins),
+    totalStepsAccumulated: Number(
+      profile?.totalStepsAccumulated ??
+        profile?.totalSteps ??
+        DEFAULT_USER_PROFILE.totalStepsAccumulated
+    ),
+    badges: Array.isArray(profile?.badges)
+      ? profile.badges
+      : DEFAULT_USER_PROFILE.badges
+  };
+}
+
+function normalizeRoute(
+  route: Partial<Route> | null | undefined,
+  fallback: Route = INITIAL_ROUTES[0]
+): Route {
+  const sourceRoute = route ?? {};
+  const safeCharacterId = getSafeCharacterId(
+    (sourceRoute as { characterGuide?: string }).characterGuide
+  );
+
+  return {
+    ...fallback,
+    ...sourceRoute,
+    id:
+      sourceRoute.id ||
+      `route_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name:
+      sourceRoute.name ||
+      (sourceRoute as { title?: string }).title ||
+      'AI 맞춤 산책 루트',
+    description:
+      sourceRoute.description ||
+      fallback.description ||
+      'AI가 현재 조건과 선택한 가이드에 맞춰 생성한 산책 루트입니다.',
+    region: sourceRoute.region || fallback.region || '크림빌리지',
+    category: sourceRoute.category || fallback.category,
+    purpose: sourceRoute.purpose || fallback.purpose,
+    difficulty: sourceRoute.difficulty || fallback.difficulty,
+    distance: sourceRoute.distance ?? fallback.distance ?? 1,
+    duration: sourceRoute.duration ?? fallback.duration ?? 20,
+    tags: Array.isArray(sourceRoute.tags) ? sourceRoute.tags : fallback.tags ?? [],
+    coordinates: Array.isArray(sourceRoute.coordinates)
+      ? sourceRoute.coordinates
+      : fallback.coordinates ?? [],
+    checkpoints: Array.isArray(sourceRoute.checkpoints)
+      ? sourceRoute.checkpoints
+      : fallback.checkpoints ?? [],
+    characterGuide: safeCharacterId,
+  } as Route;
+}
+
+function normalizeRoutes(routesCandidate: unknown): Route[] {
+  if (!Array.isArray(routesCandidate)) {
+    return INITIAL_ROUTES.map((route, index) =>
+      normalizeRoute(route, INITIAL_ROUTES[index] ?? INITIAL_ROUTES[0])
+    );
+  }
+
+  const normalizedRoutes = routesCandidate
+    .map((route, index) =>
+      normalizeRoute(
+        route as Partial<Route>,
+        INITIAL_ROUTES[index] ?? INITIAL_ROUTES[0]
+      )
+    )
+    .filter((route) => Boolean(route.id));
+
+  return normalizedRoutes.length > 0
+    ? normalizedRoutes
+    : INITIAL_ROUTES.map((route, index) =>
+        normalizeRoute(route, INITIAL_ROUTES[index] ?? INITIAL_ROUTES[0])
+      );
+}
+
+
 
 export default function App() {
   // 1. Initial State for list of routes
-  const [routes, setRoutes] = useState<Route[]>(() => {
-    const saved = localStorage.getItem('dog_adventure_routes');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return INITIAL_ROUTES;
-      }
+const [routes, setRoutes] = useState<Route[]>(() => {
+  const saved = localStorage.getItem('dog_adventure_routes');
+
+  if (saved) {
+    try {
+      return normalizeRoutes(JSON.parse(saved));
+    } catch (e) {
+      return normalizeRoutes(INITIAL_ROUTES);
     }
-    return INITIAL_ROUTES;
-  });
+  }
+
+  return normalizeRoutes(INITIAL_ROUTES);
+});
 
   // 2. State for active selection
   const [selectedRouteId, setSelectedRouteId] = useState<string>('route_1');
@@ -91,23 +202,19 @@ export default function App() {
   });
 
   // 5. User Achievement Profile (Level, coins, badges) with Local Storage persistence
-  const [userProfile, setUserProfile] = useState(() => {
-    const saved = localStorage.getItem('dog_adventure_user_profile');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // Fallback default
-      }
+const [userProfile, setUserProfile] = useState(() => {
+  const saved = localStorage.getItem('dog_adventure_user_profile');
+
+  if (saved) {
+    try {
+      return normalizeUserProfile(JSON.parse(saved));
+    } catch (e) {
+      return DEFAULT_USER_PROFILE;
     }
-    return {
-      level: 1,
-      exp: 15,
-      coins: 45,
-      totalStepsAccumulated: 8400,
-      badges: ['cheesy_starter', 'rose_pioneer'] as string[]
-    };
-  });
+  }
+
+  return DEFAULT_USER_PROFILE;
+});
 
   // 10. Mungchi Celebration dialog State
   const [celebrationBadge, setCelebrationBadge] = useState<Achievement | null>(null);
@@ -230,7 +337,7 @@ export default function App() {
     const saved = localStorage.getItem('dog_adventure_posts');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        return normalizeRoutes(JSON.parse(saved));
       } catch (e) {}
     }
     return [
@@ -290,17 +397,26 @@ export default function App() {
     return () => clearInterval(interval);
   }, [activeWalk.isWalking, activeWalk.completed]);
 
-  const selectedRoute = routes.find(r => r.id === selectedRouteId) || routes[0];
+  const selectedRoute = normalizeRoute(
+  routes.find((route) => route.id === selectedRouteId),
+  routes[0] ?? INITIAL_ROUTES[0]
+);
 
   // Callback to append route created by Gemini
   const handleRouteGenerated = (newRoute: Route) => {
-    setRoutes(prev => [newRoute, ...prev]);
-    setSelectedRouteId(newRoute.id);
-    
+    const safeRoute = normalizeRoute(newRoute);
+    const guide = getSafeCharacter(safeRoute.characterGuide);
+
+    setRoutes(prev => [safeRoute, ...normalizeRoutes(prev)]);
+    setSelectedRouteId(safeRoute.id);
+
     // Add success note in logs
     setActiveWalk(prev => ({
       ...prev,
-      eventsLog: [...prev.eventsLog, `✨ AI 가이드 ${CHARACTERS[newRoute.characterGuide].name}이가 새로운 어드벤처 지도 '${newRoute.name}'를 완성했습니다. 수첩을 펴고 출발해보세요!`]
+      eventsLog: [
+        ...prev.eventsLog,
+        `✨ AI 가이드 ${guide.name}이가 새로운 어드벤처 지도 '${safeRoute.name}'를 완성했습니다. 수첩을 펴고 출발해보세요!`
+      ]
     }));
   };
 
@@ -364,7 +480,7 @@ export default function App() {
         checkpointIndex: 0,
         totalSteps: 0,
         coinsCount: 0,
-        eventsLog: [`🚀 ${CHARACTERS[selectedRoute.characterGuide].name} 가이드와 함께 두근두근 어드벤처 모험길에 첫 발을 내딛었습니다!`],
+        eventsLog: [`🚀 ${getSafeCharacter(selectedRoute.characterGuide).name} 가이드와 함께 두근두근 어드벤처 모험길에 첫 발을 내딛었습니다!`],
         durationSeconds: 0,
         completed: false
       });
@@ -389,7 +505,7 @@ export default function App() {
     const currentCheckpoint = selectedRoute.checkpoints[activeWalk.checkpointIndex];
 
     const currentComment = currentCheckpoint 
-      ? `[${currentCheckpoint.name}] 🐾 ${CHARACTERS[selectedRoute.characterGuide].name}: "${currentCheckpoint.characterComment || '잘 따라오고 있어냥!'}"`
+      ? `[${currentCheckpoint.name}] 🐾 ${getSafeCharacter(selectedRoute.characterGuide).name}: "${currentCheckpoint.characterComment || '잘 따라오고 있어냥!'}"`
       : '구역 탐험 완료!';
 
     setActiveWalk(prev => {
@@ -540,7 +656,7 @@ export default function App() {
         totalStepsAccumulated: 8400,
         badges: ['cheesy_starter', 'rose_pioneer']
       });
-      setRoutes(INITIAL_ROUTES);
+      setRoutes(normalizeRoutes(INITIAL_ROUTES));
       setSelectedRouteId('route_1');
     }
   };
@@ -1198,7 +1314,7 @@ export default function App() {
                 { id: 'bori', name: '보리', emoji: '🐕‍🦺', color: 'from-[#D3EDE2] to-emerald-100 border-emerald-300' },
                 { id: 'mungchi', name: '뭉치', emoji: '🐩', color: 'from-[#F1DDF3] to-pink-100 border-pink-300' },
               ].map((mascot) => {
-                const charData = CHARACTERS[mascot.id];
+                const charData = getSafeCharacter(mascot.id);
                 const isFocused = focusedNpcId === mascot.id;
                 return (
                   <button
@@ -1341,7 +1457,7 @@ export default function App() {
 
             <div className="space-y-4">
               {routes.slice(0, 2).map((route) => {
-                const guide = CHARACTERS[route.characterGuide] || CHARACTERS.mango;
+                const guide = getSafeCharacter(route.characterGuide);
                 return (
                   <div
                     key={route.id}
