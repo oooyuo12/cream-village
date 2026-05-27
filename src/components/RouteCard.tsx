@@ -18,7 +18,12 @@ export const RouteCard: React.FC<RouteCardProps> = ({
   onStartWalk,
   isActiveWalk
 }) => {
-  const guide: PetCharacter = CHARACTERS[route.characterGuide];
+  const guide: PetCharacter = CHARACTERS[route.characterGuide] ?? CHARACTERS.mango;
+  const displayDistance = Number.isFinite(route.distance)
+    ? route.distance >= 100
+      ? (route.distance / 1000).toFixed(2)
+      : route.distance.toFixed(route.distance < 10 ? 2 : 1)
+    : '0.00';
 
   const getDifficultyBadge = (difficulty: string) => {
     switch (difficulty) {
@@ -159,7 +164,7 @@ export const RouteCard: React.FC<RouteCardProps> = ({
         <div className="flex flex-col items-center">
           <span className="text-[9px] font-extrabold text-warm-gray/70 uppercase tracking-wider">탐험 거리</span>
           <span className="text-xs font-bold text-warm-gray-dark flex items-center gap-0.5 mt-0.5 font-accent">
-            <Footprints size={12} className="text-pastel-orange stroke-[2.5]" /> {route.distance} <span className="text-[10px] font-medium text-warm-gray">km</span>
+            <Footprints size={12} className="text-pastel-orange stroke-[2.5]" /> {displayDistance} <span className="text-[10px] font-medium text-warm-gray">km</span>
           </span>
         </div>
         <div className="flex flex-col items-center border-x border-[#FAEFDF]">

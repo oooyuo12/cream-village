@@ -323,11 +323,10 @@ export const INITIAL_ROUTES: Route[] = [
 
 export const REGIONS = [
   '전체동네',
-  '크림빌리지 장미길',
-  '소리숲 푸른대로',
-  '속삭임 정원',
-  '노랑햇살 아케이드',
-  '번개 언덕 광장'
+  '성남시 전체',
+  '일산 덕이동',
+  '부천 범안로',
+  '서울숲'
 ];
 export const CATEGORIES = [
   { id: 'all', name: '전체 모험', emoji: '🌟' },

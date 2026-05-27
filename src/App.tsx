@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Route, FilterState, ActiveWalk, Checkpoint, PetCharacterType } from './types';
 import { INITIAL_ROUTES, CHARACTERS, REGIONS, EVENTS_POOL } from './data';
+import { LOCATION_PINS } from './pinsData';
+import { buildRecommendedUiRoutes } from './utils/routeRecommend';
 import {
   SearchBox,
   CategoryFilter,
@@ -156,20 +158,22 @@ function normalizeRoutes(routesCandidate: unknown): Route[] {
 
 
 export default function App() {
-  // 1. Initial State for list of routes
-const [routes, setRoutes] = useState<Route[]>(() => {
-  const saved = localStorage.getItem('dog_adventure_routes');
+  // 1. AI/custom routes are stored separately. Default route cards are generated from real pins.
+  const [generatedRoutes, setGeneratedRoutes] = useState<Route[]>(() => {
+    const saved = localStorage.getItem('dog_adventure_routes');
 
-  if (saved) {
-    try {
-      return normalizeRoutes(JSON.parse(saved));
-    } catch (e) {
-      return normalizeRoutes(INITIAL_ROUTES);
+    if (saved) {
+      try {
+        return normalizeRoutes(JSON.parse(saved)).filter((route) =>
+          route.id.startsWith('ai-') || route.id.startsWith('gemini')
+        );
+      } catch (e) {
+        return [];
+      }
     }
-  }
 
-  return normalizeRoutes(INITIAL_ROUTES);
-});
+    return [];
+  });
 
   // 2. State for active selection
   const [selectedRouteId, setSelectedRouteId] = useState<string>('route_1');
@@ -187,6 +191,28 @@ const [routes, setRoutes] = useState<Route[]>(() => {
     region: '전체동네',
     purpose: 'all'
   });
+
+
+  const recommendedRoutes = useMemo(() => {
+    return buildRecommendedUiRoutes({
+      pins: LOCATION_PINS,
+      filters,
+    });
+  }, [filters]);
+
+  const routes = useMemo(() => {
+    return [...generatedRoutes, ...recommendedRoutes];
+  }, [generatedRoutes, recommendedRoutes]);
+
+  useEffect(() => {
+    if (routes.length === 0) {
+      return;
+    }
+
+    if (!routes.some((route) => route.id === selectedRouteId)) {
+      setSelectedRouteId(routes[0].id);
+    }
+  }, [routes, selectedRouteId]);
 
   // 4. Active Walk Status
   const [activeWalk, setActiveWalk] = useState<ActiveWalk>({
@@ -337,7 +363,7 @@ const [userProfile, setUserProfile] = useState(() => {
     const saved = localStorage.getItem('dog_adventure_posts');
     if (saved) {
       try {
-        return normalizeRoutes(JSON.parse(saved));
+        return JSON.parse(saved);
       } catch (e) {}
     }
     return [
@@ -371,8 +397,8 @@ const [userProfile, setUserProfile] = useState(() => {
 
   // Persistence hooks
   useEffect(() => {
-    localStorage.setItem('dog_adventure_routes', JSON.stringify(routes));
-  }, [routes]);
+    localStorage.setItem('dog_adventure_routes', JSON.stringify(generatedRoutes));
+  }, [generatedRoutes]);
 
   useEffect(() => {
     localStorage.setItem('dog_adventure_user_profile', JSON.stringify(userProfile));
@@ -407,8 +433,9 @@ const [userProfile, setUserProfile] = useState(() => {
     const safeRoute = normalizeRoute(newRoute);
     const guide = getSafeCharacter(safeRoute.characterGuide);
 
-    setRoutes(prev => [safeRoute, ...normalizeRoutes(prev)]);
+    setGeneratedRoutes((prev) => [safeRoute, ...normalizeRoutes(prev)]);
     setSelectedRouteId(safeRoute.id);
+    setActiveTab('routes');
 
     // Add success note in logs
     setActiveWalk(prev => ({
@@ -425,10 +452,10 @@ const [userProfile, setUserProfile] = useState(() => {
     // Search query
     if (filters.searchQuery) {
       const q = filters.searchQuery.toLowerCase();
-      const matchesSearch = route.name.toLowerCase().includes(q) ||
-                            route.description.toLowerCase().includes(q) ||
-                            route.region.toLowerCase().includes(q) ||
-                            route.tags.some(t => t.toLowerCase().includes(q));
+      const matchesSearch = (route.name ?? '').toLowerCase().includes(q) ||
+                            (route.description ?? '').toLowerCase().includes(q) ||
+                            (route.region ?? '').toLowerCase().includes(q) ||
+                            (route.tags ?? []).some(t => t.toLowerCase().includes(q));
       if (!matchesSearch) return false;
     }
 
@@ -656,8 +683,9 @@ const [userProfile, setUserProfile] = useState(() => {
         totalStepsAccumulated: 8400,
         badges: ['cheesy_starter', 'rose_pioneer']
       });
-      setRoutes(normalizeRoutes(INITIAL_ROUTES));
-      setSelectedRouteId('route_1');
+      setGeneratedRoutes([]);
+      const freshRoutes = buildRecommendedUiRoutes({ pins: LOCATION_PINS, filters });
+      setSelectedRouteId(freshRoutes[0]?.id ?? '');
     }
   };
 

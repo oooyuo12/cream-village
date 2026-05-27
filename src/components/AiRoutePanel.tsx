@@ -743,10 +743,6 @@ function makeRouteFromAiResponse({
   const guide = CHARACTERS[safeGuideId];
   const meta = GUIDE_ROUTE_META[safeGuideId];
 
-  const rawCoordinates = Array.isArray(rawRoute.coordinates)
-    ? rawRoute.coordinates.filter(isValidLatLng)
-    : [];
-
   const selectedPins = pickRoutePins({
     selectedRegion,
     selectedPurpose,
@@ -754,10 +750,7 @@ function makeRouteFromAiResponse({
     prompt: userPrompt
   });
 
-  const fallbackCoordinates = makeCoordinatesFromPins(selectedPins, selectedRegion);
-
-  const coordinates =
-    rawCoordinates.length >= 2 ? rawCoordinates : fallbackCoordinates;
+  const coordinates = makeCoordinatesFromPins(selectedPins, selectedRegion);
 
   const distance = getRouteDistanceKm(coordinates);
   const duration = estimateDurationMinutes(
@@ -836,8 +829,8 @@ function makeRouteFromAiResponse({
       rawRoute.purpose ||
       (selectedPurpose === 'all' ? meta.purpose : selectedPurpose),
     difficulty: rawRoute.difficulty || meta.difficulty,
-    distance: Number(rawRoute.distance ?? distance.toFixed(1)),
-    duration: Number(rawRoute.duration ?? duration),
+    distance: Number(distance.toFixed(2)),
+    duration,
     tags:
       Array.isArray(rawRoute.tags) && rawRoute.tags.length > 0
         ? rawRoute.tags
