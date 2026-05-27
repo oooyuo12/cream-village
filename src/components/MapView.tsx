@@ -43,6 +43,14 @@ type LatLng = {
   lng: number;
 };
 
+type OrsGeoJsonResponse = {
+  features?: Array<{
+    geometry?: {
+      coordinates?: [number, number][];
+    };
+  }>;
+};
+
 const REGION_CENTERS: Record<RegionKey, LatLng & { name: string }> = {
   seongnam: { lat: 37.4485, lng: 127.138, name: "성남시 전체" },
   ilsan: { lat: 37.69345, lng: 126.76015, name: "고양 일산 덕이동" },
@@ -77,6 +85,21 @@ const CATEGORY_COLOR: Record<string, string> = {
   GROOMING: "#6366f1",
 };
 
+const CHECKPOINT_OFFSETS = [
+  { x: 22, y: -48 },
+  { x: -52, y: -44 },
+  { x: 24, y: 18 },
+  { x: -54, y: 16 },
+  { x: 4, y: -62 },
+];
+
+const ARROW_OFFSETS = [
+  { x: 12, y: -18 },
+  { x: -28, y: -18 },
+];
+
+const MIN_ARROW_ROUTE_KM = 0.08;
+
 function hasLatLng(value: unknown): value is LatLng {
   if (!value || typeof value !== "object") {
     return false;
@@ -90,6 +113,14 @@ function hasLatLng(value: unknown): value is LatLng {
     typeof target.lng === "number" &&
     Number.isFinite(target.lng)
   );
+}
+
+function isSamePoint(a: LatLng | null | undefined, b: LatLng | null | undefined) {
+  if (!a || !b) {
+    return false;
+  }
+
+  return getDistanceKm(a, b) < 0.025;
 }
 
 function getRouteColor(route: Route | null) {
@@ -154,7 +185,7 @@ function getCheckpointPosition({
     return checkpoint;
   }
 
-  const coordinate = route.coordinates[index + 1];
+  const coordinate = route.coordinates?.[index + 1];
 
   if (hasLatLng(coordinate)) {
     return coordinate;
@@ -196,6 +227,188 @@ function getCharacterPosition(routePath: LatLng[], progress: number): LatLng | n
   };
 }
 
+function getDistanceKm(from: LatLng, to: LatLng): number {
+  const earthRadiusKm = 6371;
+
+  const dLat = ((to.lat - from.lat) * Math.PI) / 180;
+  const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+
+  const lat1 = (from.lat * Math.PI) / 180;
+  const lat2 = (to.lat * Math.PI) / 180;
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) *
+      Math.cos(lat2) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return earthRadiusKm * c;
+}
+
+function getPathDistanceKm(path: LatLng[]) {
+  if (path.length < 2) {
+    return 0;
+  }
+
+  let distance = 0;
+
+  for (let index = 0; index < path.length - 1; index += 1) {
+    distance += getDistanceKm(path[index], path[index + 1]);
+  }
+
+  return distance;
+}
+
+function getBearingDegree(from: LatLng, to: LatLng): number {
+  const lat1 = (from.lat * Math.PI) / 180;
+  const lat2 = (to.lat * Math.PI) / 180;
+  const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+function getPointAtDistanceRatio(path: LatLng[], ratio: number) {
+  if (path.length < 2) {
+    return null;
+  }
+
+  const totalDistance = getPathDistanceKm(path);
+
+  if (totalDistance <= 0) {
+    return null;
+  }
+
+  const targetDistance = totalDistance * ratio;
+  let walkedDistance = 0;
+
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const from = path[index];
+    const to = path[index + 1];
+    const segmentDistance = getDistanceKm(from, to);
+
+    if (walkedDistance + segmentDistance >= targetDistance) {
+      const localRatio =
+        segmentDistance === 0
+          ? 0
+          : (targetDistance - walkedDistance) / segmentDistance;
+
+      return {
+        position: {
+          lat: from.lat + (to.lat - from.lat) * localRatio,
+          lng: from.lng + (to.lng - from.lng) * localRatio,
+        },
+        degree: getBearingDegree(from, to),
+      };
+    }
+
+    walkedDistance += segmentDistance;
+  }
+
+  const lastFrom = path[path.length - 2];
+  const lastTo = path[path.length - 1];
+
+  return {
+    position: lastTo,
+    degree: getBearingDegree(lastFrom, lastTo),
+  };
+}
+
+async function fetchWalkingPath(routePoints: LatLng[]): Promise<LatLng[]> {
+  const apiKey =
+    import.meta.env.VITE_ORS_API_KEY ||
+    import.meta.env.VITE_OPENROUTESERVICE_API_KEY;
+
+  if (!apiKey || routePoints.length < 2) {
+    return routePoints;
+  }
+
+  const coordinates = routePoints.map((point) => [point.lng, point.lat]);
+
+  const response = await fetch(
+    "https://api.openrouteservice.org/v2/directions/foot-walking/geojson",
+    {
+      method: "POST",
+      headers: {
+        Authorization: apiKey,
+        Accept: "application/json, application/geo+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        coordinates,
+        instructions: false,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.warn("OpenRouteService route failed:", response.status, errorText);
+
+    return routePoints;
+  }
+
+  const data = (await response.json()) as OrsGeoJsonResponse;
+  const orsCoordinates = data.features?.[0]?.geometry?.coordinates ?? [];
+
+  if (orsCoordinates.length < 2) {
+    return routePoints;
+  }
+
+  return orsCoordinates.map(([lng, lat]) => ({
+    lat,
+    lng,
+  }));
+}
+
+function getRouteSplitIndex(routePoints: LatLng[]): number {
+  if (routePoints.length <= 2) {
+    return 1;
+  }
+
+  return Math.max(1, Math.floor((routePoints.length - 1) / 2));
+}
+
+function splitRoutePoints(routePoints: LatLng[]) {
+  if (routePoints.length < 2) {
+    return {
+      outboundPoints: [] as LatLng[],
+      returnPoints: [] as LatLng[],
+    };
+  }
+
+  const splitIndex = getRouteSplitIndex(routePoints);
+
+  return {
+    outboundPoints: routePoints.slice(0, splitIndex + 1),
+    returnPoints: routePoints.slice(splitIndex),
+  };
+}
+
+function mergeDisplayPaths(outboundPath: LatLng[], returnPath: LatLng[]) {
+  if (outboundPath.length >= 2 && returnPath.length >= 2) {
+    return [...outboundPath, ...returnPath.slice(1)];
+  }
+
+  if (outboundPath.length >= 2) {
+    return outboundPath;
+  }
+
+  if (returnPath.length >= 2) {
+    return returnPath;
+  }
+
+  return [] as LatLng[];
+}
+
+
 function createDivIcon({
   html,
   size,
@@ -214,10 +427,21 @@ function createDivIcon({
   });
 }
 
-function createLocationPinIcon(category: string, isSelected = false) {
+function createLocationPinIcon(
+  category: string,
+  isSelected = false,
+  isDimmed = false
+) {
   const color = CATEGORY_COLOR[category] ?? "#f97316";
   const emoji = getPinEmoji(category);
-  const size = isSelected ? 42 : 36;
+  const size = isSelected ? 42 : isDimmed ? 24 : 34;
+  const opacity = isSelected ? 1 : isDimmed ? 0.44 : 0.9;
+  const borderWidth = isSelected ? 3 : isDimmed ? 2 : 3;
+  const shadow = isSelected
+    ? "0 5px 15px rgba(0,0,0,0.38)"
+    : isDimmed
+    ? "0 2px 7px rgba(0,0,0,0.20)"
+    : "0 4px 12px rgba(0,0,0,0.32)";
 
   return createDivIcon({
     size: [size, size],
@@ -229,17 +453,46 @@ function createLocationPinIcon(category: string, isSelected = false) {
         border-radius:50% 50% 50% 0;
         transform:rotate(-45deg);
         background:${color};
-        border:3px solid white;
-        box-shadow:0 4px 12px rgba(0,0,0,0.35);
+        border:${borderWidth}px solid white;
+        box-shadow:${shadow};
         display:flex;
         align-items:center;
         justify-content:center;
+        opacity:${opacity};
+        filter:${isDimmed ? "saturate(0.75)" : "none"};
       ">
         <span style="
           transform:rotate(45deg);
-          font-size:${isSelected ? 20 : 17}px;
+          font-size:${isSelected ? 20 : isDimmed ? 12 : 16}px;
           line-height:1;
         ">${emoji}</span>
+      </div>
+    `,
+  });
+}
+
+function createStartGoalIcon() {
+  return createDivIcon({
+    size: [104, 38],
+    anchor: [52, 42],
+    html: `
+      <div style="
+        height:34px;
+        padding:0 12px;
+        border-radius:999px;
+        background:#111827;
+        color:white;
+        border:3px solid white;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        font-size:12px;
+        font-weight:900;
+        box-shadow:0 4px 14px rgba(0,0,0,0.35);
+        white-space:nowrap;
+        transform:translate(0px,-18px);
+      ">
+        START / GOAL
       </div>
     `,
   });
@@ -248,7 +501,7 @@ function createLocationPinIcon(category: string, isSelected = false) {
 function createStartIcon() {
   return createDivIcon({
     size: [72, 38],
-    anchor: [36, 19],
+    anchor: [36, 42],
     html: `
       <div style="
         height:34px;
@@ -264,6 +517,7 @@ function createStartIcon() {
         font-weight:900;
         box-shadow:0 4px 14px rgba(0,0,0,0.35);
         white-space:nowrap;
+        transform:translate(-14px,-16px);
       ">
         START
       </div>
@@ -274,7 +528,7 @@ function createStartIcon() {
 function createGoalIcon() {
   return createDivIcon({
     size: [72, 38],
-    anchor: [36, 19],
+    anchor: [36, 0],
     html: `
       <div style="
         height:34px;
@@ -290,6 +544,7 @@ function createGoalIcon() {
         font-weight:900;
         box-shadow:0 4px 14px rgba(0,0,0,0.35);
         white-space:nowrap;
+        transform:translate(14px,18px);
       ">
         GOAL
       </div>
@@ -298,29 +553,119 @@ function createGoalIcon() {
 }
 
 function createCheckpointIcon(index: number, active: boolean, discovered: boolean) {
-  const background = active ? "#f97316" : discovered ? "#fef3c7" : "#e5e7eb";
-  const color = active ? "#ffffff" : "#374151";
-  const border = active ? "#ffffff" : "#f59e0b";
+  const background = active ? "#f97316" : discovered ? "#ffffff" : "#fffbeb";
+  const color = active ? "#ffffff" : "#111827";
+  const border = active ? "#ffffff" : "#f97316";
+  const outerColor = active ? "#f97316" : "#f59e0b";
+  const offset = CHECKPOINT_OFFSETS[index % CHECKPOINT_OFFSETS.length];
 
   return createDivIcon({
-    size: [38, 38],
-    anchor: [19, 19],
+    size: [1, 1],
+    anchor: [0, 0],
     html: `
       <div style="
-        width:34px;
-        height:34px;
+        transform:translate(${offset.x}px, ${offset.y}px);
+        position:relative;
+        width:60px;
+        height:60px;
         border-radius:999px;
-        background:${background};
-        color:${color};
-        border:3px solid ${border};
+        background:rgba(255,255,255,0.94);
+        border:4px solid ${outerColor};
         display:flex;
         align-items:center;
         justify-content:center;
-        font-size:13px;
-        font-weight:900;
-        box-shadow:0 4px 12px rgba(0,0,0,0.28);
+        box-shadow:0 10px 24px rgba(0,0,0,0.38);
       ">
-        ${index + 1}
+        <div style="
+          position:absolute;
+          inset:-7px;
+          border-radius:999px;
+          border:3px solid rgba(249,115,22,0.28);
+          background:rgba(249,115,22,0.08);
+        "></div>
+        <div style="
+          width:42px;
+          height:42px;
+          border-radius:999px;
+          background:${background};
+          color:${color};
+          border:3px solid ${border};
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          font-size:18px;
+          font-weight:1000;
+          line-height:1;
+          position:relative;
+          z-index:1;
+        ">
+          ${index + 1}
+        </div>
+        <div style="
+          position:absolute;
+          left:50%;
+          bottom:-16px;
+          transform:translateX(-50%);
+          padding:2px 8px;
+          border-radius:999px;
+          background:#111827;
+          color:#ffffff;
+          border:2px solid #ffffff;
+          font-size:9px;
+          font-weight:950;
+          white-space:nowrap;
+          box-shadow:0 3px 10px rgba(0,0,0,0.28);
+        ">
+          경유지
+        </div>
+      </div>
+    `,
+  });
+}
+
+function createDirectionArrowIcon({
+  degree,
+  color,
+  index,
+  label,
+}: {
+  degree: number;
+  color: string;
+  index: number;
+  label?: string;
+}) {
+  const offset = ARROW_OFFSETS[index % ARROW_OFFSETS.length];
+  const hasLabel = Boolean(label);
+
+  return createDivIcon({
+    size: [1, 1],
+    anchor: [0, 0],
+    html: `
+      <div style="
+        transform:translate(${offset.x}px, ${offset.y}px);
+        min-width:${hasLabel ? 42 : 26}px;
+        height:26px;
+        padding:0 ${hasLabel ? 8 : 5}px;
+        border-radius:999px;
+        background:rgba(255,255,255,0.96);
+        color:${color};
+        border:2px solid ${color};
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        gap:3px;
+        font-size:10px;
+        font-weight:950;
+        box-shadow:0 3px 10px rgba(0,0,0,0.26);
+        white-space:nowrap;
+      ">
+        ${hasLabel ? `<span>${label}</span>` : ""}
+        <span style="
+          display:inline-block;
+          transform:rotate(${degree - 90}deg);
+          font-size:14px;
+          line-height:1;
+        ">➤</span>
       </div>
     `,
   });
@@ -358,28 +703,32 @@ function createCharacterIcon(route: Route) {
 function MapCenterController({
   center,
   zoom,
-  routePath,
+  displayPath,
 }: {
   center: LatLng;
   zoom: number;
-  routePath: LatLng[];
+  displayPath: LatLng[];
 }) {
   const map = useMap();
 
   useEffect(() => {
     map.invalidateSize();
 
-    if (routePath.length >= 2) {
-      const bounds = L.latLngBounds(routePath.map((point) => [point.lat, point.lng]));
+    if (displayPath.length >= 2) {
+      const bounds = L.latLngBounds(
+        displayPath.map((point) => [point.lat, point.lng])
+      );
+
       map.fitBounds(bounds, {
-        padding: [40, 40],
+        padding: [48, 48],
         maxZoom: 16,
       });
+
       return;
     }
 
     map.setView([center.lat, center.lng], zoom);
-  }, [center.lat, center.lng, zoom, routePath, map]);
+  }, [center.lat, center.lng, zoom, displayPath, map]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -403,16 +752,83 @@ export const MapView: React.FC<MapViewProps> = ({
   const [activeCategory, setActiveCategory] = useState<CategoryKey>("ALL");
   const [mapCenter, setMapCenter] = useState<LatLng>(REGION_CENTERS.seongnam);
   const [mapZoom, setMapZoom] = useState(14);
+  const [outboundPath, setOutboundPath] = useState<LatLng[]>([]);
+  const [returnPath, setReturnPath] = useState<LatLng[]>([]);
+  const [isRouteLoading, setIsRouteLoading] = useState(false);
 
-  const routePath = useMemo(() => getRouteLatLngs(selectedRoute), [selectedRoute]);
+  const rawRoutePath = useMemo(
+    () => getRouteLatLngs(selectedRoute),
+    [selectedRoute]
+  );
+
   const routeColor = getRouteColor(selectedRoute);
+  const returnRouteColor = "#2563eb";
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadWalkingPath() {
+      if (rawRoutePath.length < 2) {
+        setOutboundPath([]);
+        setReturnPath([]);
+        return;
+      }
+
+      const { outboundPoints, returnPoints } = splitRoutePoints(rawRoutePath);
+
+      setIsRouteLoading(true);
+
+      try {
+        const [nextOutboundPath, nextReturnPath] = await Promise.all([
+          outboundPoints.length >= 2
+            ? fetchWalkingPath(outboundPoints)
+            : Promise.resolve(outboundPoints),
+          returnPoints.length >= 2
+            ? fetchWalkingPath(returnPoints)
+            : Promise.resolve(returnPoints),
+        ]);
+
+        if (isMounted) {
+          setOutboundPath(nextOutboundPath);
+          setReturnPath(nextReturnPath);
+        }
+      } catch (error) {
+        console.warn("Walking path fallback:", error);
+
+        if (isMounted) {
+          setOutboundPath(outboundPoints);
+          setReturnPath(returnPoints);
+        }
+      } finally {
+        if (isMounted) {
+          setIsRouteLoading(false);
+        }
+      }
+    }
+
+    loadWalkingPath();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [rawRoutePath]);
+
+  const outboundDisplayPath = outboundPath.length >= 2
+    ? outboundPath
+    : splitRoutePoints(rawRoutePath).outboundPoints;
+
+  const returnDisplayPath = returnPath.length >= 2
+    ? returnPath
+    : splitRoutePoints(rawRoutePath).returnPoints;
+
+  const displayPath = mergeDisplayPaths(outboundDisplayPath, returnDisplayPath);
 
   useEffect(() => {
     if (!selectedRoute) {
       return;
     }
 
-    const firstRoutePoint = routePath[0];
+    const firstRoutePoint = rawRoutePath[0];
 
     if (firstRoutePoint) {
       setMapCenter(firstRoutePoint);
@@ -440,11 +856,12 @@ export const MapView: React.FC<MapViewProps> = ({
     } else {
       setActiveRegion("seongnam");
     }
-  }, [selectedRoute, routePath]);
+  }, [selectedRoute, rawRoutePath]);
 
   useEffect(() => {
     if (activeWalk.isWalking && selectedRoute) {
-      const activeCp = selectedRoute.checkpoints[activeWalk.checkpointIndex];
+      const checkpoints = selectedRoute.checkpoints ?? [];
+      const activeCp = checkpoints[activeWalk.checkpointIndex];
 
       if (activeCp) {
         setSelectedNode(activeCp);
@@ -500,7 +917,7 @@ export const MapView: React.FC<MapViewProps> = ({
   }, [activeRegion, activeCategory]);
 
   useEffect(() => {
-    if (routePath.length > 0) {
+    if (rawRoutePath.length > 0) {
       return;
     }
 
@@ -509,19 +926,21 @@ export const MapView: React.FC<MapViewProps> = ({
     if (fallbackCenter) {
       setMapCenter(fallbackCenter);
     }
-  }, [filteredPins, routePath.length]);
+  }, [filteredPins, rawRoutePath.length]);
 
   const checkpointMarkers = useMemo(() => {
     if (!selectedRoute) {
       return [];
     }
 
-    return selectedRoute.checkpoints
+    const checkpoints = selectedRoute.checkpoints ?? [];
+
+    return checkpoints
       .map((checkpoint, index) => {
         const position = getCheckpointPosition({
           checkpoint,
           index,
-          routePath,
+          routePath: rawRoutePath,
           route: selectedRoute,
         });
 
@@ -544,15 +963,120 @@ export const MapView: React.FC<MapViewProps> = ({
           position: LatLng;
         } => Boolean(item)
       );
-  }, [selectedRoute, routePath]);
+  }, [selectedRoute, rawRoutePath]);
 
   const characterPosition =
     selectedRoute && activeWalk.isWalking
-      ? getCharacterPosition(routePath, activeWalk.progress)
+      ? getCharacterPosition(displayPath, activeWalk.progress)
       : null;
 
-  const startPoint = routePath[0];
-  const goalPoint = routePath.length > 1 ? routePath[routePath.length - 1] : null;
+  const startPoint = rawRoutePath[0] ?? null;
+  const goalPoint =
+    rawRoutePath.length > 1 ? rawRoutePath[rawRoutePath.length - 1] : null;
+
+  const startGoalOverlap = isSamePoint(startPoint, goalPoint);
+
+  const routeDistanceKm = getPathDistanceKm(displayPath);
+
+  const visiblePins = useMemo(() => {
+    const checkpointPositions = checkpointMarkers.map((marker) => marker.position);
+
+    return filteredPins.filter((pin) => {
+      const pinPosition = {
+        lat: pin.lat,
+        lng: pin.lng,
+      };
+
+      const isRouteStop = checkpointPositions.some((position) => {
+        return getDistanceKm(pinPosition, position) < 0.06;
+      });
+
+      const isStartOrGoal =
+        isSamePoint(pinPosition, startPoint) || isSamePoint(pinPosition, goalPoint);
+
+      return !isRouteStop && !isStartOrGoal;
+    });
+  }, [filteredPins, checkpointMarkers, startPoint, goalPoint]);
+
+  const directionMarkers = useMemo(() => {
+    const markers: Array<{
+      id: string;
+      index: number;
+      position: LatLng;
+      degree: number;
+      color: string;
+      label?: string;
+    }> = [];
+
+    const addMarkers = ({
+      path,
+      label,
+      color,
+      idPrefix,
+      offsetBase,
+    }: {
+      path: LatLng[];
+      label: string;
+      color: string;
+      idPrefix: string;
+      offsetBase: number;
+    }) => {
+      const distanceKm = getPathDistanceKm(path);
+
+      if (path.length < 2 || distanceKm < MIN_ARROW_ROUTE_KM) {
+        return;
+      }
+
+      const labeledPoint = getPointAtDistanceRatio(path, 0.5);
+
+      if (labeledPoint) {
+        markers.push({
+          id: `${idPrefix}-label`,
+          index: offsetBase,
+          position: labeledPoint.position,
+          degree: labeledPoint.degree,
+          color,
+          label,
+        });
+      }
+
+      if (distanceKm >= 0.45) {
+        [0.28, 0.72].forEach((ratio, index) => {
+          const point = getPointAtDistanceRatio(path, ratio);
+
+          if (!point) {
+            return;
+          }
+
+          markers.push({
+            id: `${idPrefix}-arrow-${index}`,
+            index: offsetBase + index + 1,
+            position: point.position,
+            degree: point.degree,
+            color,
+          });
+        });
+      }
+    };
+
+    addMarkers({
+      path: outboundDisplayPath,
+      label: "가는",
+      color: routeColor,
+      idPrefix: "outbound-direction",
+      offsetBase: 0,
+    });
+
+    addMarkers({
+      path: returnDisplayPath,
+      label: "오는",
+      color: returnRouteColor,
+      idPrefix: "return-direction",
+      offsetBase: 3,
+    });
+
+    return markers;
+  }, [outboundDisplayPath, returnDisplayPath, routeColor, returnRouteColor]);
 
   return (
     <div className="w-full flex flex-col gap-4.5" id="map-view-wrapper">
@@ -578,7 +1102,7 @@ export const MapView: React.FC<MapViewProps> = ({
           <MapCenterController
             center={mapCenter}
             zoom={mapZoom}
-            routePath={routePath}
+            displayPath={displayPath}
           />
 
           <TileLayer
@@ -586,38 +1110,92 @@ export const MapView: React.FC<MapViewProps> = ({
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          {routePath.length >= 2 && (
+          {displayPath.length >= 2 && (
             <>
               <Polyline
-                positions={routePath.map((point) => [point.lat, point.lng])}
+                positions={displayPath.map((point) => [point.lat, point.lng])}
                 pathOptions={{
-                  color: "#ffffff",
-                  weight: 10,
-                  opacity: 0.95,
+                  color: "#111827",
+                  weight: 16,
+                  opacity: 0.20,
                   lineCap: "round",
                   lineJoin: "round",
                 }}
               />
 
               <Polyline
-                positions={routePath.map((point) => [point.lat, point.lng])}
+                positions={displayPath.map((point) => [point.lat, point.lng])}
                 pathOptions={{
-                  color: routeColor,
-                  weight: 6,
-                  opacity: 0.95,
+                  color: "#ffffff",
+                  weight: 12,
+                  opacity: 0.94,
                   lineCap: "round",
                   lineJoin: "round",
-                  dashArray: "12 10",
                 }}
               />
             </>
           )}
 
-          {startPoint && (
+          {outboundDisplayPath.length >= 2 && (
+            <Polyline
+              positions={outboundDisplayPath.map((point) => [point.lat, point.lng])}
+              pathOptions={{
+                color: routeColor,
+                weight: 7,
+                opacity: 0.98,
+                lineCap: "round",
+                lineJoin: "round",
+              }}
+            />
+          )}
+
+          {returnDisplayPath.length >= 2 && (
+            <>
+              <Polyline
+                positions={returnDisplayPath.map((point) => [point.lat, point.lng])}
+                pathOptions={{
+                  color: "#ffffff",
+                  weight: 8,
+                  opacity: 0.70,
+                  lineCap: "round",
+                  lineJoin: "round",
+                  dashArray: "12 10",
+                }}
+              />
+
+              <Polyline
+                positions={returnDisplayPath.map((point) => [point.lat, point.lng])}
+                pathOptions={{
+                  color: returnRouteColor,
+                  weight: 5,
+                  opacity: 0.98,
+                  lineCap: "round",
+                  lineJoin: "round",
+                  dashArray: "5 11",
+                }}
+              />
+            </>
+          )}
+
+          {startPoint && startGoalOverlap && (
+            <Marker
+              position={[startPoint.lat, startPoint.lng]}
+              icon={createStartGoalIcon()}
+              zIndexOffset={2300}
+            >
+              <Popup>
+                <strong>출발/도착 지점</strong>
+                <br />
+                왕복 루트라 시작점과 도착점이 같습니다.
+              </Popup>
+            </Marker>
+          )}
+
+          {startPoint && !startGoalOverlap && (
             <Marker
               position={[startPoint.lat, startPoint.lng]}
               icon={createStartIcon()}
-              zIndexOffset={1200}
+              zIndexOffset={2300}
             >
               <Popup>
                 <strong>출발 지점</strong>
@@ -627,11 +1205,11 @@ export const MapView: React.FC<MapViewProps> = ({
             </Marker>
           )}
 
-          {goalPoint && (
+          {goalPoint && !startGoalOverlap && (
             <Marker
               position={[goalPoint.lat, goalPoint.lng]}
               icon={createGoalIcon()}
-              zIndexOffset={1200}
+              zIndexOffset={2300}
             >
               <Popup>
                 <strong>도착 지점</strong>
@@ -654,7 +1232,7 @@ export const MapView: React.FC<MapViewProps> = ({
                 key={checkpoint.id}
                 position={[position.lat, position.lng]}
                 icon={createCheckpointIcon(index, isCurrentActive, isDiscovered)}
-                zIndexOffset={1000 + index}
+                zIndexOffset={2400 + index}
                 eventHandlers={{
                   click: () => {
                     setSelectedNode(checkpoint);
@@ -674,15 +1252,15 @@ export const MapView: React.FC<MapViewProps> = ({
             );
           })}
 
-          {filteredPins.map((pin) => {
+          {visiblePins.map((pin) => {
             const isSelected = selectedPin?.id === pin.id;
 
             return (
               <Marker
                 key={pin.id}
                 position={[pin.lat, pin.lng]}
-                icon={createLocationPinIcon(pin.category, isSelected)}
-                zIndexOffset={isSelected ? 900 : 600}
+                icon={createLocationPinIcon(pin.category, isSelected, Boolean(selectedRoute && !isSelected))}
+                zIndexOffset={isSelected ? 900 : selectedRoute ? 260 : 600}
                 eventHandlers={{
                   click: () => {
                     setSelectedPin(pin);
@@ -703,11 +1281,26 @@ export const MapView: React.FC<MapViewProps> = ({
             );
           })}
 
+          {directionMarkers.map((marker) => (
+            <Marker
+              key={marker.id}
+              position={[marker.position.lat, marker.position.lng]}
+              icon={createDirectionArrowIcon({
+                degree: marker.degree,
+                color: marker.color,
+                index: marker.index,
+                label: marker.label,
+              })}
+              interactive={false}
+              zIndexOffset={1800}
+            />
+          ))}
+
           {selectedRoute && characterPosition && (
             <Marker
               position={[characterPosition.lat, characterPosition.lng]}
               icon={createCharacterIcon(selectedRoute)}
-              zIndexOffset={1600}
+              zIndexOffset={1700}
             >
               <Popup>
                 <strong>
@@ -733,6 +1326,14 @@ export const MapView: React.FC<MapViewProps> = ({
             {REGION_CENTERS[activeRegion].name}
           </span>
         </div>
+
+        {isRouteLoading && (
+          <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-md px-3 py-2 rounded-2xl border border-cream-border shadow-xs flex items-center gap-2 pointer-events-none z-[1000]">
+            <span className="text-[10px] font-black text-warm-gray-dark">
+              가는길/오는길 보행 경로 계산 중...
+            </span>
+          </div>
+        )}
 
         {!selectedRoute && (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-[#FAF8F5]/50 backdrop-blur-[1px] pointer-events-none z-[900]">
@@ -778,39 +1379,6 @@ export const MapView: React.FC<MapViewProps> = ({
           <p className="text-[11.5px] text-warm-gray leading-relaxed font-sans font-medium mt-0.5">
             {selectedNode.description}
           </p>
-
-          <div className="p-3 rounded-2xl border-2 text-[10.5px] text-warm-gray-dark leading-relaxed flex gap-2.5 items-start shadow-inner bg-[#FFF9EE] border-amber-400/75">
-            <div className="relative flex-shrink-0">
-              {CHARACTERS[selectedRoute.characterGuide]?.avatarImage ? (
-                <img
-                  src={CHARACTERS[selectedRoute.characterGuide].avatarImage}
-                  alt={CHARACTERS[selectedRoute.characterGuide].name}
-                  referrerPolicy="no-referrer"
-                  className="w-12 h-12 rounded-xl object-cover border border-slate-200/50 shadow-xs animate-bounce block"
-                />
-              ) : (
-                <span className="text-2xl flex-shrink-0 animate-bounce block">
-                  {CHARACTERS[selectedRoute.characterGuide]?.avatarEmoji ?? "🐾"}
-                </span>
-              )}
-              <span className="absolute -bottom-1 -right-1 text-[9px] bg-white rounded-full p-0.2 border shadow-xs">
-                💬
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-0.5">
-              <span className="font-black uppercase tracking-wide text-[9.5px] text-amber-800">
-                {CHARACTERS[selectedRoute.characterGuide]?.name ?? "가이드"}님의
-                한마디:
-              </span>
-              <p className="italic text-stone-700/95 font-bold leading-relaxed pr-1 text-[11px]">
-                “
-                {selectedNode.characterComment ||
-                  "이곳에 맛 좋은 도토리가 분명 숨어있다냥! 한번 발길을 멈춰 구경해보자냥!"}
-                ”
-              </p>
-            </div>
-          </div>
         </div>
       )}
 
@@ -947,45 +1515,6 @@ export const MapView: React.FC<MapViewProps> = ({
           <p className="text-[11.5px] text-warm-gray leading-relaxed font-sans font-semibold">
             {selectedPin.description}
           </p>
-
-          <div className="flex flex-wrap gap-1.5">
-            {selectedPin.dogSizeAllowed && (
-              <span className="text-[9.5px] font-bold bg-white text-stone-600 px-2.5 py-1 rounded-xl border border-stone-200">
-                🐶 {selectedPin.dogSizeAllowed}
-              </span>
-            )}
-
-            {selectedPin.indoorAllowed !== undefined && (
-              <span className="text-[9.5px] font-bold bg-white text-stone-600 px-2.5 py-1 rounded-xl border border-stone-200">
-                🏠 {selectedPin.indoorAllowed ? "실내 동반 허용" : "야외/테라스만 허용"}
-              </span>
-            )}
-
-            {selectedPin.parkingAvailable !== undefined && (
-              <span className="text-[9.5px] font-bold bg-white text-stone-600 px-2.5 py-1 rounded-xl border border-stone-200">
-                🚗 {selectedPin.parkingAvailable ? "주차 가능" : "주차 불가"}
-              </span>
-            )}
-
-            {selectedPin.leashRequired !== undefined && (
-              <span className="text-[9.5px] font-bold bg-white text-stone-600 px-2.5 py-1 rounded-xl border border-[#FAEFDF]/70">
-                🦮 {selectedPin.leashRequired ? "목줄 필수 착용" : "오프리쉬 구역"}
-              </span>
-            )}
-
-            {selectedPin.reservationRequired !== undefined && (
-              <span className="text-[9.5px] font-bold bg-white text-stone-600 px-2.5 py-1 rounded-xl border border-stone-200">
-                📅 {selectedPin.reservationRequired ? "사전 예약 필수" : "예약 없음"}
-              </span>
-            )}
-          </div>
-
-          {selectedPin.notes && (
-            <div className="text-[10.5px] text-amber-850 bg-amber-500/5 p-2.5 rounded-2xl border border-amber-500/10 leading-relaxed font-semibold">
-              💡 <span className="text-warm-gray-dark font-black">이용 수칙:</span>{" "}
-              {selectedPin.notes}
-            </div>
-          )}
         </div>
       )}
     </div>
