@@ -1,5 +1,11 @@
 import { PetCharacter, Route } from './types';
 
+import mangoAvatar from './assets/images/mango_avatar_1779519876588.png';
+import janggunAvatar from './assets/images/janggun_avatar_1779519900264.png';
+import nabiAvatar from './assets/images/nabi_avatar_1779519918901.png';
+import boriAvatar from './assets/images/bori_avatar_1779519937488.png';
+import mungchiAvatar from './assets/images/mungchi_avatar_1779519956861.png';
+
 export const CHARACTERS: Record<string, PetCharacter> = {
   mango: {
     id: 'mango',
@@ -10,7 +16,7 @@ export const CHARACTERS: Record<string, PetCharacter> = {
     specialty: '비밀 골목길 & 골목 사진 스팟 탐색',
     avatar: '🥭',
     avatarEmoji: '🐱',
-    avatarImage: '/src/assets/images/mango_avatar_1779519876588.png',
+    avatarImage: mangoAvatar,
     color: 'from-amber-400 to-orange-500 text-amber-900 border-amber-300 bg-amber-50',
     description: '“이 담벼락 너머에 뭐가 있는지 알아? 내 꼬리를 따라와봐, 엄청난 비밀 장소를 보여줄게!”'
   },
@@ -23,7 +29,7 @@ export const CHARACTERS: Record<string, PetCharacter> = {
     specialty: '유모차 가능 도로 & 안전 횡단보도 안내',
     avatar: '🛡️',
     avatarEmoji: '🐶',
-    avatarImage: '/src/assets/images/janggun_avatar_1779519900264.png',
+    avatarImage: janggunAvatar,
     color: 'from-slate-700 to-slate-900 text-white border-slate-600 bg-slate-100',
     description: '“다치지 않게 조심조심! 내가 먼저 냄새를 맡고 왔으니 안심하고 걸어도 좋아.”'
   },
@@ -36,7 +42,7 @@ export const CHARACTERS: Record<string, PetCharacter> = {
     specialty: '길가 낙엽 아래 도토리, 나비 친구 찾기',
     avatar: '🦋',
     avatarEmoji: '🐈‍⬛',
-    avatarImage: '/src/assets/images/nabi_avatar_1779519918901.png',
+    avatarImage: nabiAvatar,
     color: 'from-sky-400 to-indigo-500 text-sky-950 border-sky-300 bg-sky-50',
     description: '“헤헤, 저기 벤치 아래 반짝이는 연못 상자가 있어! 빨리 열어보고 싶지 않아?”'
   },
@@ -49,7 +55,7 @@ export const CHARACTERS: Record<string, PetCharacter> = {
     specialty: '바람 소리 명당, 흙냄새 가득 정원 추천',
     avatar: '🌾',
     avatarEmoji: '🐕‍🦺',
-    avatarImage: '/src/assets/images/bori_avatar_1779519937488.png',
+    avatarImage: boriAvatar,
     color: 'from-emerald-400 to-teal-500 text-emerald-950 border-emerald-300 bg-emerald-50',
     description: '“이곳 풀밭은 유난히 폭신해. 머물면서 솔바람 소리를 함께 듣고 시원한 흙냄새를 맡아보자.”'
   },
@@ -62,7 +68,7 @@ export const CHARACTERS: Record<string, PetCharacter> = {
     specialty: '칼로리 소모 언덕길 & 보상 뱃지 축하',
     avatar: '⚡',
     avatarEmoji: '🐩',
-    avatarImage: '/src/assets/images/mungchi_avatar_1779519956861.png',
+    avatarImage: mungchiAvatar,
     color: 'from-rose-400 to-pink-500 text-rose-950 border-rose-300 bg-rose-50',
     description: '“신나게 뛰자! 저 높은 언덕을 3분만에 돌파하면 나와 함께 골드 뱃지를 획득할 수 있어!”'
   }
