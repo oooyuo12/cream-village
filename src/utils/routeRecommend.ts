@@ -249,7 +249,10 @@ function scorePin(pin: LocationPin, start: LatLng, filters: FilterState, allowed
 
 function getRankedPins(pins: LocationPin[], start: LatLng, filters: FilterState): LocationPin[] {
   const allowedCategories = getAllowedCategories(filters);
-  const regionPins = pins.filter((pin) => matchesRegion(pin, filters.region));
+  const shouldUseRegionFilter = Boolean(filters.region && filters.region !== '전체동네');
+  const regionPins = shouldUseRegionFilter
+    ? pins.filter((pin) => matchesRegion(pin, filters.region))
+    : pins;
   const basePins = regionPins.length > 0 ? regionPins : pins;
   const radiusKm = Math.max(filters.radius / 1000, 0.8);
 
@@ -280,8 +283,13 @@ function pickDiversePin(
   });
 }
 
-function buildStopsForLength(pins: LocationPin[], filters: FilterState, lengthType: RouteLengthType): LocationPin[] {
-  const start = getRegionCenter(filters.region);
+function buildStopsForLength(
+  pins: LocationPin[],
+  filters: FilterState,
+  lengthType: RouteLengthType,
+  startLocation?: LatLng
+): LocationPin[] {
+  const start = startLocation ?? getRegionCenter(filters.region);
   const rankedPins = getRankedPins(pins, start, filters);
   const usedIds = new Set<string>();
   const stops: LocationPin[] = [];
@@ -411,8 +419,13 @@ function getRouteDescription(stops: LocationPin[], filters: FilterState, lengthT
   return `${coreText} 활동량을 확보할 수 있도록 여러 지점을 연결하고 복귀 동선을 분리한 긴 왕복 산책입니다.${returnToiletText}`;
 }
 
-function createRouteFromStops(stops: LocationPin[], filters: FilterState, lengthType: RouteLengthType): Route {
-  const start = getRegionCenter(filters.region);
+function createRouteFromStops(
+  stops: LocationPin[],
+  filters: FilterState,
+  lengthType: RouteLengthType,
+  startLocation?: LatLng
+): Route {
+  const start = startLocation ?? getRegionCenter(filters.region);
   const guide = getCharacterForRoute(filters, lengthType);
   const routePoints = [
     start,
@@ -447,13 +460,22 @@ function createRouteFromStops(stops: LocationPin[], filters: FilterState, length
 export function buildRecommendedUiRoutes({
   pins,
   filters,
+  startLocation,
 }: {
   pins: LocationPin[];
   filters: FilterState;
+  startLocation?: LatLng;
 }): Route[] {
   const lengthTypes: RouteLengthType[] = ['SHORT', 'MEDIUM', 'LONG'];
 
   return lengthTypes
-    .map((lengthType) => createRouteFromStops(buildStopsForLength(pins, filters, lengthType), filters, lengthType))
+    .map((lengthType) =>
+      createRouteFromStops(
+        buildStopsForLength(pins, filters, lengthType, startLocation),
+        filters,
+        lengthType,
+        startLocation
+      )
+    )
     .filter((route) => route.checkpoints.length > 0);
 }

@@ -726,14 +726,12 @@ function MapCenterController({
   displayPath,
   selectedRouteId,
   pathSignature,
-  isManualMapControl,
 }: {
   center: LatLng;
   zoom: number;
   displayPath: LatLng[];
   selectedRouteId?: string | null;
   pathSignature: string;
-  isManualMapControl: boolean;
 }) {
   const map = useMap();
   const lastAutoFitSignatureRef = useRef<string | null>(null);
@@ -748,12 +746,6 @@ function MapCenterController({
 
   useEffect(() => {
     map.invalidateSize();
-
-    // 사용자가 지도 중앙을 직접 고르는 중이면 절대 루트 위치로 자동 복귀하지 않는다.
-    // 이 값이 true인 동안에는 drag/zoom 후 부모 상태가 갱신되어도 fitBounds/setView를 막는다.
-    if (isManualMapControl) {
-      return;
-    }
 
     if (!selectedRouteId || displayPath.length < 2) {
       map.setView([center.lat, center.lng], zoom);
@@ -784,7 +776,6 @@ function MapCenterController({
     selectedRouteId,
     pathSignature,
     displayPath,
-    isManualMapControl,
     map,
   ]);
 
@@ -794,10 +785,8 @@ function MapCenterController({
 
 function MapCenterReporter({
   onMapCenterChange,
-  onUserMapControlStart,
 }: {
   onMapCenterChange?: (center: LatLng) => void;
-  onUserMapControlStart?: () => void;
 }) {
   const report = (map: L.Map) => {
     if (!onMapCenterChange) {
@@ -812,8 +801,6 @@ function MapCenterReporter({
   };
 
   const map = useMapEvents({
-    dragstart: () => onUserMapControlStart?.(),
-    zoomstart: () => onUserMapControlStart?.(),
     moveend: () => report(map),
     zoomend: () => report(map),
   });
@@ -841,8 +828,6 @@ export const MapView: React.FC<MapViewProps> = ({
   const [outboundPath, setOutboundPath] = useState<LatLng[]>([]);
   const [returnPath, setReturnPath] = useState<LatLng[]>([]);
   const [isRouteLoading, setIsRouteLoading] = useState(false);
-  const [isManualMapControl, setIsManualMapControl] = useState(false);
-  const previousRouteIdRef = useRef<string | null>(null);
 
   const rawRoutePath = useMemo(
     () => getRouteLatLngs(selectedRoute),
@@ -918,15 +903,6 @@ export const MapView: React.FC<MapViewProps> = ({
     () => createPathSignature(displayPath),
     [displayPath]
   );
-
-  useEffect(() => {
-    const nextRouteId = selectedRoute?.id ?? null;
-
-    if (previousRouteIdRef.current !== nextRouteId) {
-      previousRouteIdRef.current = nextRouteId;
-      setIsManualMapControl(false);
-    }
-  }, [selectedRoute?.id]);
 
   useEffect(() => {
     if (!selectedRoute) {
@@ -1210,12 +1186,8 @@ export const MapView: React.FC<MapViewProps> = ({
             displayPath={displayPath}
             selectedRouteId={selectedRoute?.id ?? null}
             pathSignature={displayPathSignature}
-            isManualMapControl={isManualMapControl}
           />
-          <MapCenterReporter
-            onMapCenterChange={onMapCenterChange}
-            onUserMapControlStart={() => setIsManualMapControl(true)}
-          />
+          <MapCenterReporter onMapCenterChange={onMapCenterChange} />
 
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

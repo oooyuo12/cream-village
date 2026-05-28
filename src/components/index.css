@@ -45,27 +45,10 @@ h1,
 h2,
 h3,
 h4,
-h5,
-h6,
-p,
-span,
 .font-display,
-.font-accent,
-.font-mono {
+.font-accent {
   font-family: "Inter", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   letter-spacing: -0.01em;
-}
-
-
-/* Force imported UI fragments to use one typography system. */
-* {
-  font-family: "Inter", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-}
-
-.font-mono,
-.font-accent,
-.font-display {
-  font-family: "Inter", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif !important;
 }
 
 /* Custom Line Friends style soft bubble shadows */

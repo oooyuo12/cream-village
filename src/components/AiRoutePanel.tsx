@@ -16,6 +16,7 @@ interface AiRoutePanelProps {
   selectedPurpose: string;
   selectedRegion: string;
   preSelectedGuide?: PetCharacterType;
+  selectedStartLocation?: LatLng;
 }
 
 type LatLng = {
@@ -523,19 +524,24 @@ function pickRoutePins({
   selectedRegion,
   selectedPurpose,
   selectedRadius,
-  prompt
+  prompt,
+  startLocation
 }: {
   selectedRegion: string;
   selectedPurpose: string;
   selectedRadius: number;
   prompt: string;
+  startLocation?: LatLng;
 }): LocationPinLike[] {
   const allPins = LOCATION_PINS as LocationPinLike[];
-  const center = getFallbackCenter(selectedRegion);
+  const center = startLocation ?? getFallbackCenter(selectedRegion);
   const allowedCategories = getAllowedCategories(selectedPurpose, prompt);
   const specialCategory = getSpecialPurposeCategory(allowedCategories);
 
-  const regionPins = allPins.filter((pin) => matchesRegion(pin, selectedRegion));
+  const shouldUseRegionFilter = Boolean(selectedRegion && selectedRegion !== '전체동네' && selectedRegion !== '크림빌리지');
+  const regionPins = shouldUseRegionFilter
+    ? allPins.filter((pin) => matchesRegion(pin, selectedRegion))
+    : allPins;
   const basePins = regionPins.length > 0 ? regionPins : allPins;
 
   const rankedPins = basePins
@@ -684,8 +690,12 @@ function makeRouteCoordinate(point: LatLng, index: number) {
   };
 }
 
-function makeCoordinatesFromPins(pins: LocationPinLike[], selectedRegion: string): LatLng[] {
-  const start = getFallbackCenter(selectedRegion);
+function makeCoordinatesFromPins(
+  pins: LocationPinLike[],
+  selectedRegion: string,
+  startLocation?: LatLng
+): LatLng[] {
+  const start = startLocation ?? getFallbackCenter(selectedRegion);
 
   if (pins.length === 0) {
     return [
@@ -728,7 +738,8 @@ function makeRouteFromAiResponse({
   selectedRadius,
   selectedPurpose,
   selectedRegion,
-  userPrompt
+  userPrompt,
+  selectedStartLocation
 }: {
   rawRoute: Partial<Route>;
   activeGuide: PetCharacterType;
@@ -736,6 +747,7 @@ function makeRouteFromAiResponse({
   selectedPurpose: string;
   selectedRegion: string;
   userPrompt: string;
+  selectedStartLocation?: LatLng;
 }): Route {
   const safeGuideId = getSafeGuideId(
     (rawRoute as { characterGuide?: string }).characterGuide || activeGuide
@@ -747,10 +759,15 @@ function makeRouteFromAiResponse({
     selectedRegion,
     selectedPurpose,
     selectedRadius,
-    prompt: userPrompt
+    prompt: userPrompt,
+    startLocation: selectedStartLocation
   });
 
-  const coordinates = makeCoordinatesFromPins(selectedPins, selectedRegion);
+  const coordinates = makeCoordinatesFromPins(
+    selectedPins,
+    selectedRegion,
+    selectedStartLocation
+  );
 
   const distance = getRouteDistanceKm(coordinates);
   const duration = estimateDurationMinutes(
@@ -853,7 +870,8 @@ export const AiRoutePanel: React.FC<AiRoutePanelProps> = ({
   selectedRadius,
   selectedPurpose,
   selectedRegion,
-  preSelectedGuide
+  preSelectedGuide,
+  selectedStartLocation
 }) => {
   const [activeGuide, setActiveGuide] = useState<PetCharacterType>('mango');
   const [userPrompt, setUserPrompt] = useState('');
@@ -904,7 +922,8 @@ export const AiRoutePanel: React.FC<AiRoutePanelProps> = ({
           requirement: userPrompt || '동네의 보석 같은 감성 지점을 발견하고 싶어!',
           radius: selectedRadius,
           purpose: selectedPurpose === 'all' ? 'afternoon' : selectedPurpose,
-          region: selectedRegion === '전체동네' ? '크림빌리지' : selectedRegion
+          region: selectedRegion === '전체동네' ? '크림빌리지' : selectedRegion,
+          startLocation: selectedStartLocation
         })
       });
 
@@ -930,7 +949,8 @@ export const AiRoutePanel: React.FC<AiRoutePanelProps> = ({
         selectedRadius,
         selectedPurpose,
         selectedRegion,
-        userPrompt
+        userPrompt,
+        selectedStartLocation
       });
 
       onRouteGenerated(generatedRoute);

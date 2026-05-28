@@ -207,40 +207,6 @@ function formatRouteDistance(distance: number): string {
   return safeDistance.toFixed(safeDistance < 10 ? 2 : 1);
 }
 
-type LatLng = {
-  lat: number;
-  lng: number;
-};
-
-const REGION_START_CENTERS: Record<string, LatLng> = {
-  '전체동네': { lat: 37.4509, lng: 127.1287 },
-  '성남시 전체': { lat: 37.4509, lng: 127.1287 },
-  '가천대': { lat: 37.4509, lng: 127.1287 },
-  '일산 덕이동': { lat: 37.69345, lng: 126.76015 },
-  '부천 범안로': { lat: 37.46236, lng: 126.8125 },
-  '서울숲': { lat: 37.5443, lng: 127.0374 },
-};
-
-function getDefaultStartLocation(region: string): LatLng {
-  if (region.includes('덕이') || region.includes('일산')) {
-    return REGION_START_CENTERS['일산 덕이동'];
-  }
-
-  if (region.includes('부천') || region.includes('범안')) {
-    return REGION_START_CENTERS['부천 범안로'];
-  }
-
-  if (region.includes('서울숲')) {
-    return REGION_START_CENTERS['서울숲'];
-  }
-
-  return REGION_START_CENTERS['성남시 전체'];
-}
-
-function formatStartLocation(location: LatLng): string {
-  return `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`;
-}
-
 function getRouteHeroImage(route: Route): string {
   if (route.category === 'quiet') {
     return 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop';
@@ -293,99 +259,13 @@ export default function App() {
     purpose: 'all'
   });
 
-  const [startLocation, setStartLocation] = useState<LatLng>(() => {
-    const saved = localStorage.getItem('dog_route_start_location');
-
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-
-        if (
-          typeof parsed?.lat === 'number' &&
-          Number.isFinite(parsed.lat) &&
-          typeof parsed?.lng === 'number' &&
-          Number.isFinite(parsed.lng)
-        ) {
-          return { lat: parsed.lat, lng: parsed.lng };
-        }
-      } catch (error) {
-        // Ignore broken localStorage value.
-      }
-    }
-
-    return getDefaultStartLocation('성남시 전체');
-  });
-
-  const [startLocationMode, setStartLocationMode] = useState<'region' | 'current' | 'map'>('region');
-  const [startLocationMessage, setStartLocationMessage] = useState<string | null>(null);
-  const [mapCenterCandidate, setMapCenterCandidate] = useState<LatLng | null>(null);
-
-  useEffect(() => {
-    localStorage.setItem('dog_route_start_location', JSON.stringify(startLocation));
-  }, [startLocation]);
-
-  useEffect(() => {
-    if (startLocationMode !== 'region') {
-      return;
-    }
-
-    setStartLocation(getDefaultStartLocation(filters.region));
-  }, [filters.region, startLocationMode]);
-
-  const handleUseCurrentLocationAsStart = () => {
-    setStartLocationMessage(null);
-
-    if (!navigator.geolocation) {
-      setStartLocationMessage('현재 브라우저에서 위치 정보를 지원하지 않습니다.');
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const nextLocation = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        };
-
-        setStartLocation(nextLocation);
-        setStartLocationMode('current');
-        setStartLocationMessage('현재 위치를 출발점으로 설정했습니다.');
-      },
-      () => {
-        setStartLocationMessage('현재 위치 권한이 거부되었거나 위치를 가져오지 못했습니다.');
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 8000,
-        maximumAge: 30000,
-      }
-    );
-  };
-
-  const handleUseMapCenterAsStart = () => {
-    const nextLocation = mapCenterCandidate ?? startLocation;
-
-    setStartLocation(nextLocation);
-    setStartLocationMode('map');
-    setStartLocationMessage('현재 지도 중앙을 출발점으로 설정했습니다.');
-  };
-
-  const handleUseRegionCenterAsStart = () => {
-    const nextLocation = getDefaultStartLocation(filters.region);
-
-    setStartLocation(nextLocation);
-    setStartLocationMode('region');
-    setStartLocationMessage('선택 지역의 기본 위치를 출발점으로 설정했습니다.');
-  };
-
 
   const recommendedRoutes = useMemo(() => {
     return buildRecommendedUiRoutes({
       pins: LOCATION_PINS,
       filters,
-      startLocation,
     });
-  }, [filters, startLocation]);
+  }, [filters]);
 
   const routes = useMemo(() => {
     return [...generatedRoutes, ...recommendedRoutes];
@@ -671,7 +551,7 @@ const [userProfile, setUserProfile] = useState(() => {
     if (window.confirm("생성된 AI 루트와 임시 저장 데이터를 초기화할까요?")) {
       setGeneratedRoutes([]);
       localStorage.removeItem('dog_adventure_routes');
-      const freshRoutes = buildRecommendedUiRoutes({ pins: LOCATION_PINS, filters, startLocation });
+      const freshRoutes = buildRecommendedUiRoutes({ pins: LOCATION_PINS, filters });
       setSelectedRouteId(freshRoutes[0]?.id ?? '');
     }
   };
@@ -690,10 +570,10 @@ const [userProfile, setUserProfile] = useState(() => {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg md:text-xl font-black tracking-tight text-warm-gray-dark font-sans leading-none">
-                  크림빌리지 반려견 산책 루트
+                  크림빌리지 댕냥 모험길 🧭
                 </h1>
                 <span className="text-[9.5px] bg-pastel-orange-soft text-pastel-orange border border-[#FFE8DA] px-2 py-0.5 rounded-full font-black">
-                  실제 지도 기반
+                  감성 정거장
                 </span>
                 <button
                   type="button"
@@ -701,12 +581,12 @@ const [userProfile, setUserProfile] = useState(() => {
                   onClick={() => setShowOnboarding(prev => !prev)}
                   className="text-[9.5px] bg-cream-accent hover:bg-[#F3E6D5] text-[#904414] border border-[#FAEFDF] px-2.5 py-0.5 rounded-full font-black ml-1.5 cursor-pointer transition-colors flex items-center gap-1"
                 >
-                  <span>가이드 소개</span>
+                  <span>📖 대장 가이드북</span>
                   <span className="text-[8px] bg-white text-pastel-orange px-1 py-[0.5px] rounded-full">{showOnboarding ? "ON" : "OFF"}</span>
                 </button>
               </div>
               <p className="text-[11px] text-warm-gray font-semibold mt-1">
-                실제 장소 핀과 보행 경로를 기반으로 반려견 산책 왕복 루트를 추천합니다.
+                “발걸음마다 이야기가 피어나는 동네 산책 보물찾기” — 뭉치 소대와 친구들
               </p>
             </div>
           </div>
@@ -899,58 +779,6 @@ const [userProfile, setUserProfile] = useState(() => {
         {/* Left column (Bento filter state & input forms + Cards List) */}
         <div className="lg:col-span-5 flex flex-col gap-6 min-w-0" id="left-column">
           
-          <section className="bg-white p-5 rounded-[32px] border-2 border-cream-border/70 flex flex-col gap-3.5 shadow-soft" id="start-location-panel">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-black text-warm-gray-dark flex items-center gap-2">
-                  <MapPin size={16} className="text-pastel-orange stroke-[2.5]" />
-                  출발 지점 설정
-                </h2>
-                <p className="text-[10.5px] text-warm-gray mt-1 font-semibold leading-relaxed">
-                  추천 루트는 아래 출발점을 기준으로 다시 계산됩니다. 현재 위치, 지도 중앙, 선택 지역 기본 위치 중 하나를 사용할 수 있습니다.
-                </p>
-              </div>
-              <span className="text-[9px] bg-pastel-orange-soft text-pastel-orange border border-[#FFE8DA] px-2.5 py-1 rounded-full font-black shrink-0">
-                {startLocationMode === 'current' ? '현재 위치' : startLocationMode === 'map' ? '지도 중앙' : '지역 기본'}
-              </span>
-            </div>
-
-            <div className="bg-[#FFFDF9] border border-[#FAEFDF] rounded-2xl p-3 flex flex-col gap-1.5">
-              <span className="text-[9px] text-warm-gray/70 font-black uppercase">현재 출발 좌표</span>
-              <span className="text-xs font-black text-warm-gray-dark">{formatStartLocation(startLocation)}</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={handleUseCurrentLocationAsStart}
-                className="px-3 py-2.5 rounded-2xl bg-zinc-900 text-white text-[10.5px] font-black shadow-xs hover:bg-zinc-800 transition-colors"
-              >
-                현재 위치 사용
-              </button>
-              <button
-                type="button"
-                onClick={handleUseMapCenterAsStart}
-                className="px-3 py-2.5 rounded-2xl bg-white border-2 border-cream-border text-warm-gray-dark text-[10.5px] font-black shadow-xs hover:border-pastel-orange transition-colors"
-              >
-                지도 중앙 사용
-              </button>
-              <button
-                type="button"
-                onClick={handleUseRegionCenterAsStart}
-                className="px-3 py-2.5 rounded-2xl bg-white border-2 border-cream-border text-warm-gray-dark text-[10.5px] font-black shadow-xs hover:border-pastel-orange transition-colors"
-              >
-                지역 기본값
-              </button>
-            </div>
-
-            {startLocationMessage && (
-              <p className="text-[10px] text-[#9F5614] bg-[#FFF7ED] border border-[#FED7AA] rounded-2xl px-3 py-2 font-bold">
-                {startLocationMessage}
-              </p>
-            )}
-          </section>
-
           {/* Bento Selector Panel */}
           <section className="bg-white p-5 rounded-[32px] border-2 border-cream-board/60 flex flex-col gap-5 shadow-soft" id="interactive-selectors">
             <h2 className="text-sm font-black text-warm-gray-dark flex items-center gap-2 tracking-wide font-sans pl-0.5">
@@ -976,7 +804,6 @@ const [userProfile, setUserProfile] = useState(() => {
               selectedPurpose={filters.purpose}
               selectedRegion={filters.region}
               preSelectedGuide={focusedNpcId}
-              selectedStartLocation={startLocation}
             />
           </section>
 
@@ -1067,7 +894,7 @@ const [userProfile, setUserProfile] = useState(() => {
             <div className="flex items-center justify-between px-1.5">
               <span className="text-xs font-black text-warm-gray-dark flex items-center gap-1.5 pl-0.5">
                 <Compass size={14} className="text-[#D55F1B] stroke-[2.5]" />
-                <span>지도 완주수첩 발견 목록 ({filteredRoutes.length}개)</span>
+                <span>탐험 완주수첩 발견 목록 ({filteredRoutes.length}개)</span>
               </span>
               <span className="text-[10px] text-pastel-orange font-black bg-pastel-orange-soft border border-[#FFE8DA] px-3 py-0.5 rounded-full">
                 {filters.region === '전체동네' ? '크림빌리지 전체구역' : filters.region}
@@ -1128,8 +955,6 @@ const [userProfile, setUserProfile] = useState(() => {
             <MapView
               selectedRoute={selectedRoute}
               activeWalk={activeWalk}
-              startLocation={startLocation}
-              onMapCenterChange={setMapCenterCandidate}
             />
           </section>
 
@@ -1143,6 +968,16 @@ const [userProfile, setUserProfile] = useState(() => {
               onStartWalk={handleStartWalkToggle}
               onTriggerRandomEvent={handleTriggerRandomEvent}
             />
+          </section>
+
+          <section className="bg-white p-5 rounded-[32px] border-2 border-cream-border/60 shadow-soft flex flex-col gap-3.5" id="route-data-note">
+            <div className="flex items-center gap-2">
+              <span className="text-base">✅</span>
+              <span className="text-xs font-black text-warm-gray-dark">현재 화면은 실제 추천 데이터 기준입니다</span>
+            </div>
+            <p className="text-[11px] text-warm-gray leading-relaxed font-medium">
+              이전의 코인·레벨·가짜 걸음수·랜덤 이벤트 기능은 제거했습니다. 이제 추천 카드, 지도, 상세 안내는 실제 핀 데이터와 루트 계산 결과를 기준으로 표시됩니다.
+            </p>
           </section>
 
         </div>
@@ -1159,11 +994,11 @@ const [userProfile, setUserProfile] = useState(() => {
             <div>
               <p className="text-xs text-[#D55F1B] font-extrabold uppercase tracking-wider flex items-center gap-1">
                 <Compass size={13} className="text-pastel-orange stroke-[2.5]" />
-                <span>반려견 산책 루트 추천</span>
+                <span>크림빌리지 장미길 순찰본부</span>
               </p>
               <h1 className="text-2xl sm:text-3xl font-black leading-tight mt-1 text-warm-gray-dark">
-                오늘의 추천 산책 루트<br />
-                조건에 맞는 코스를 확인하세요
+                반갑다냥, 요원님!<br />
+                오늘의 모험을 골라라냥!
               </h1>
             </div>
 
@@ -1222,7 +1057,7 @@ const [userProfile, setUserProfile] = useState(() => {
               }}
               className="rounded-2xl px-5 py-3.5 bg-zinc-900 hover:bg-zinc-800 text-white text-[11.5px] font-black shadow-lg hover:scale-[1.02] transition-all duration-350 btn-squishy flex items-center gap-1 leading-none cursor-pointer"
             >
-              <span>이 루트 지도 열기 →</span>
+              <span>이 추천길 탐험 시작하기 →</span>
             </button>
           </section>
 
@@ -1231,7 +1066,7 @@ const [userProfile, setUserProfile] = useState(() => {
             <div className="bg-white rounded-3xl shadow-soft p-4 flex items-center gap-3 border border-cream-border">
               <span className="text-xl">🔍</span>
               <input
-                placeholder="어떤 조건의 산책 루트를 찾나요? 예: 조용한 공원, 배변시설 포함"
+                placeholder="어디로 모험하고 싶나요? (예: 장미길, 대로, 골목...)"
                 className="bg-transparent outline-none w-full text-xs font-semibold text-warm-gray-dark"
                 value={filters.searchQuery}
                 onChange={(e) => {
@@ -1242,119 +1077,170 @@ const [userProfile, setUserProfile] = useState(() => {
             </div>
           </section>
 
-          {/* Guide selector: simplified, non-gamified */}
-          <section className="mb-7 w-full bg-white border-2 border-cream-border/75 rounded-[36px] p-5 shadow-soft" id="guide-selector-section">
+          {/* Interactive NPC Guide Center */}
+          <section className="mb-7 w-full bg-white border-2 border-cream-border/75 rounded-[36px] p-5 shadow-soft" id="npc-guide-station">
             <div className="flex items-center justify-between mb-4 px-1">
               <div>
                 <h3 className="text-base font-black text-warm-gray-dark flex items-center gap-1.5 leading-none">
-                  추천 가이드 선택
+                  크림마을 대장 NPC 초소 🐾
                 </h3>
-                <p className="text-[10px] text-warm-gray mt-1 font-semibold">
-                  가이드별 추천 성향을 선택하면 필터와 AI 추천 기본값이 바뀝니다.
-                </p>
+                <p className="text-[10px] text-warm-gray mt-1 font-semibold">대장을 탭해 대사집을 열고, 특화 퀘스트나 AI 지도를 획득하세요!</p>
               </div>
               <button 
-                onClick={() => setActiveTab('routes')} 
+                onClick={() => setShowOnboarding(true)} 
                 className="text-[10px] bg-cream-base text-pastel-orange border border-[#FFE8DA] px-3 py-1 rounded-full font-black hover:bg-[#FFE8DA] transition-colors"
               >
-                AI 추천 열기
+                도감 도장 스티커 📒
               </button>
             </div>
 
-            <div className="grid grid-cols-5 gap-2.5 pb-3.5 w-full">
-              {(['mango', 'janggun', 'nabi', 'bori', 'mungchi'] as PetCharacterType[]).map((guideId) => {
-                const charData = getSafeCharacter(guideId);
-                const isFocused = focusedNpcId === guideId;
+            {/* NPC horizontal Selector Rows */}
+            <div className="flex gap-2.5 overflow-x-auto no-scrollbar pb-3.5 pr-1 w-full justify-between sm:justify-start">
+              {[
+                { id: 'mango', name: '망고', emoji: '🐱', color: 'from-amber-200 to-amber-100 border-amber-300' },
+                { id: 'janggun', name: '장군', emoji: '🐶', color: 'from-zinc-300 to-zinc-200 border-zinc-400' },
+                { id: 'nabi', name: '나비', emoji: '🐈‍⬛', color: 'from-sky-200 to-sky-100 border-sky-305' },
+                { id: 'bori', name: '보리', emoji: '🐕‍🦺', color: 'from-[#D3EDE2] to-emerald-100 border-emerald-300' },
+                { id: 'mungchi', name: '뭉치', emoji: '🐩', color: 'from-[#F1DDF3] to-pink-100 border-pink-300' },
+              ].map((mascot) => {
+                const charData = getSafeCharacter(mascot.id);
+                const isFocused = focusedNpcId === mascot.id;
                 return (
                   <button
-                    key={guideId}
-                    id={`guide-selector-btn-${guideId}`}
+                    key={mascot.id}
+                    id={`npc-selector-btn-${mascot.id}`}
                     type="button"
-                    onClick={() => setFocusedNpcId(guideId)}
-                    className={`min-w-0 rounded-2xl p-2.5 border-2 flex flex-col items-center text-center transition-all duration-300 select-none cursor-pointer ${
+                    onClick={() => {
+                      setFocusedNpcId(mascot.id as any);
+                    }}
+                    className={`flex-shrink-0 min-w-[72px] sm:min-w-[82px] rounded-2xl p-2.5 border-2 flex flex-col items-center text-center transition-all duration-300 transform select-none cursor-pointer ${
                       isFocused 
-                        ? 'bg-white border-pastel-orange shadow-md ring-4 ring-pastel-orange/5' 
+                        ? 'bg-gradient-to-b from-[#FFF9EE] to-white border-pastel-orange shadow-md scale-105 ring-4 ring-pastel-orange/5' 
                         : 'bg-cream-base border-cream-border hover:bg-white hover:border-pastel-orange/50'
                     }`}
                   >
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl mb-1.5 overflow-hidden bg-white border border-cream-border">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl mb-1.5 overflow-hidden transition-transform ${isFocused ? 'rotate-6' : ''}`}>
                       {charData?.avatarImage ? (
-                        <img src={charData.avatarImage} alt={charData.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <img src={charData.avatarImage} alt={mascot.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
-                        charData.avatarEmoji
+                        mascot.emoji
                       )}
                     </div>
-                    <span className={`text-[10.5px] font-black ${isFocused ? 'text-[#D55F1B]' : 'text-warm-gray-dark'}`}>{charData.name}</span>
-                    <span className="text-[7.5px] text-warm-gray font-bold line-clamp-1 leading-none mt-0.5">{charData.role}</span>
+                    <span className={`text-[10.5px] font-black ${isFocused ? 'text-[#D55F1B]' : 'text-warm-gray-dark'}`}>{mascot.name}</span>
+                    <span className="text-[7.5px] text-warm-gray font-bold line-clamp-1 leading-none mt-0.5">{charData?.role.split(' ')[0]}</span>
                   </button>
                 );
               })}
             </div>
 
-            <div className="mt-1 p-4 rounded-3xl border-2 border-cream-border bg-[#FFFDF9] flex flex-col gap-3.5 relative overflow-hidden animate-[fadeIn_0.32s_ease-out]">
-              <div className="flex gap-3.5 items-start">
-                <div className="w-13 h-13 rounded-2xl bg-white border border-cream-border flex items-center justify-center text-2xl shadow-soft overflow-hidden flex-shrink-0">
-                  {getSafeCharacter(focusedNpcId).avatarImage ? (
-                    <img src={getSafeCharacter(focusedNpcId).avatarImage} alt={getSafeCharacter(focusedNpcId).name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  ) : (
-                    <span>{getSafeCharacter(focusedNpcId).avatarEmoji}</span>
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <span className="text-[9.5px] font-black uppercase tracking-widest text-[#9F5614]">
-                    {getSafeCharacter(focusedNpcId).name} 추천 성향
+            {/* Selected NPC Active Interactive Board Frame */}
+            {focusedNpcId && (
+              <div 
+                className={`mt-1 p-4 rounded-3xl border-2 transition-all duration-300 flex flex-col gap-3.5 relative overflow-hidden animate-[fadeIn_0.32s_ease-out] ${
+                  focusedNpcId === 'mango' ? 'bg-[#FFFDF7] border-amber-300 text-amber-950' :
+                  focusedNpcId === 'janggun' ? 'bg-[#F8FAFC] border-slate-350 text-slate-950' :
+                  focusedNpcId === 'nabi' ? 'bg-[#F0F8FF] border-sky-300 text-sky-950' :
+                  focusedNpcId === 'bori' ? 'bg-[#F2FAF8] border-teal-300 text-teal-950' :
+                  'bg-[#FFF5F6] border-rose-300 text-rose-950'
+                }`}
+                id={`npc-active-board-${focusedNpcId}`}
+              >
+                {/* Visual Status Indicator Tags */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-black/5 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    <span className="text-[9.5px] font-black uppercase tracking-wider">{npcInteractData[focusedNpcId].status}</span>
+                  </div>
+                  <span className="text-[8.5px] font-extrabold bg-white px-2 py-0.5 rounded-md border border-black/5 shadow-inner">
+                    {npcInteractData[focusedNpcId].vitality}
                   </span>
-                  <p className="text-[11px] leading-relaxed font-semibold mt-1 text-stone-800">
-                    {getSafeCharacter(focusedNpcId).description}
-                  </p>
+                </div>
+
+                {/* NPC Animated Character Avatar + Dialogue Bubble */}
+                <div className="flex gap-3.5 items-start">
+                  <div className="relative flex-shrink-0">
+                    <div className="w-13 h-13 rounded-2xl bg-white border border-black/10 flex items-center justify-center text-2xl shadow-soft overflow-hidden hover:scale-105 transition-transform">
+                      {CHARACTERS[focusedNpcId]?.avatarImage ? (
+                        <img src={CHARACTERS[focusedNpcId].avatarImage} alt={CHARACTERS[focusedNpcId].name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <span>💬</span>
+                      )}
+                    </div>
+                    {/* Tiny species badge */}
+                    <span className="absolute -bottom-1 -right-1 text-[8px] bg-white border px-1 rounded-md text-warm-gray font-black scale-90 leading-tight">
+                      {CHARACTERS[focusedNpcId]?.species.split(' ')[0]}
+                    </span>
+                  </div>
+
+                  <div className="flex-1">
+                    <span className="text-[9.5px] font-black uppercase tracking-widest text-[#9F5614]">
+                      {CHARACTERS[focusedNpcId]?.name} 대장선배 수다록:
+                    </span>
+                    <p className="text-[11px] leading-relaxed font-bold italic mt-1 text-stone-800">
+                      “{npcInteractData[focusedNpcId].quote}”
+                    </p>
+                  </div>
+                </div>
+
+                {/* NPC Specialty Skill Cards */}
+                <div className="bg-white/80 backdrop-blur-xs p-2.5 rounded-2xl border border-black/5 flex items-center justify-between text-[10.5px]">
+                  <div>
+                    <span className="text-warm-gray font-bold">대장 기술(Specialty):</span>
+                    <span className="font-extrabold text-stone-900 ml-1.5">{CHARACTERS[focusedNpcId]?.specialty}</span>
+                  </div>
+                  <span className="text-[8.5px] bg-[#FFF2DE] hover:bg-amber-100 text-[#B8711E] px-2 py-0.5 rounded-full font-black">
+                    {npcInteractData[focusedNpcId].role}
+                  </span>
+                </div>
+
+                {/* RPG CTAs Actions Block - Not breaking core functions! */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                  {/* Action 1: Apply pre-mapped specialty quest routes */}
+                  <button
+                    type="button"
+                    id={`npc-trigger-quest-${focusedNpcId}`}
+                    onClick={() => npcInteractData[focusedNpcId].applyFilters()}
+                    className={`w-full py-3.5 px-3 rounded-2xl text-[10.5px] font-black flex items-center justify-center gap-1.5 shadow-sm hover:scale-[1.015] transition-all btn-squishy cursor-pointer select-none ${
+                      focusedNpcId === 'mango' ? 'bg-amber-400 hover:bg-amber-500 text-white' :
+                      focusedNpcId === 'janggun' ? 'bg-slate-700 hover:bg-slate-800 text-white' :
+                      focusedNpcId === 'nabi' ? 'bg-sky-400 hover:bg-sky-505 text-white' :
+                      focusedNpcId === 'bori' ? 'bg-emerald-500 hover:bg-emerald-650 text-white' :
+                      'bg-rose-500 hover:bg-rose-600 text-white'
+                    }`}
+                  >
+                    <span>🧭</span>
+                    <span>{npcInteractData[focusedNpcId].actionLabel}</span>
+                  </button>
+
+                  {/* Action 2: Navigate and pre-fill AI customized generator */}
+                  <button
+                    type="button"
+                    id={`npc-trigger-ai-guide-${focusedNpcId}`}
+                    onClick={() => {
+                      setFilters(prev => ({
+                        ...prev,
+                        category: focusedNpcId === 'mango' || focusedNpcId === 'mungchi' ? 'adventure' : focusedNpcId === 'janggun' ? 'quiet' : focusedNpcId === 'bori' ? 'nature' : 'sensory',
+                        purpose: focusedNpcId === 'mango' ? 'afternoon' : focusedNpcId === 'bori' ? 'sunset' : focusedNpcId === 'mungchi' ? 'night' : 'morning',
+                        searchQuery: ''
+                      }));
+                      setActiveTab('routes');
+                      // Quick notification alert to look up card
+                      alert(`🤖 AI 제작소의 대장 가이드가 '${CHARACTERS[focusedNpcId]?.name}' 선배로 전담 임명되었습니다! 하단의 AI 맞춤 수첩 그리기를 눌러보세요.`);
+                    }}
+                    className="w-full py-3.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-white rounded-2xl text-[10.5px] font-black flex items-center justify-center gap-1 hover:scale-[1.015] transition-all btn-squishy cursor-pointer select-none"
+                  >
+                    <span>🤖</span>
+                    <span>이 대장과 AI 맞춤 지도 생성 지시</span>
+                  </button>
                 </div>
               </div>
-
-              <div className="bg-white p-2.5 rounded-2xl border border-cream-border flex items-center justify-between text-[10.5px] gap-2">
-                <div>
-                  <span className="text-warm-gray font-bold">주요 기준:</span>
-                  <span className="font-extrabold text-stone-900 ml-1.5">{getSafeCharacter(focusedNpcId).specialty}</span>
-                </div>
-                <span className="text-[8.5px] bg-[#FFF2DE] text-[#B8711E] px-2 py-0.5 rounded-full font-black shrink-0">
-                  {getSafeCharacter(focusedNpcId).role}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                <button
-                  type="button"
-                  id={`guide-apply-filter-${focusedNpcId}`}
-                  onClick={() => npcInteractData[focusedNpcId].applyFilters()}
-                  className="w-full py-3.5 px-3 rounded-2xl text-[10.5px] font-black flex items-center justify-center gap-1.5 shadow-sm hover:scale-[1.015] transition-all btn-squishy cursor-pointer select-none bg-pastel-orange hover:bg-orange-500 text-white"
-                >
-                  <span>필터 적용</span>
-                </button>
-
-                <button
-                  type="button"
-                  id={`guide-open-ai-${focusedNpcId}`}
-                  onClick={() => {
-                    setFilters(prev => ({
-                      ...prev,
-                      category: focusedNpcId === 'mango' || focusedNpcId === 'mungchi' ? 'adventure' : focusedNpcId === 'janggun' ? 'quiet' : focusedNpcId === 'bori' ? 'nature' : 'sensory',
-                      purpose: focusedNpcId === 'mango' ? 'afternoon' : focusedNpcId === 'bori' ? 'sunset' : focusedNpcId === 'mungchi' ? 'night' : 'morning',
-                      searchQuery: ''
-                    }));
-                    setActiveTab('routes');
-                  }}
-                  className="w-full py-3.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-white rounded-2xl text-[10.5px] font-black flex items-center justify-center gap-1 hover:scale-[1.015] transition-all btn-squishy cursor-pointer select-none"
-                >
-                  <span>AI 맞춤 루트 만들기</span>
-                </button>
-              </div>
-            </div>
+            )}
           </section>
 
           {/* Recommended routes deck */}
           <section className="mb-8 w-full">
             <div className="flex items-center justify-between mb-4 px-0.5">
-              <h3 className="text-base font-black text-warm-gray-dark">추천 산책 코스</h3>
+              <h3 className="text-base font-black text-warm-gray-dark">추천 산책 코스 🗺️</h3>
               <button onClick={() => { setActiveTab('routes') }} className="text-[11px] text-warm-gray font-bold">더보기</button>
             </div>
 
@@ -1464,7 +1350,7 @@ getRouteHeroImage(route)
             <section className="bg-white p-5 rounded-[32px] border-2 border-cream-board/60 flex flex-col gap-4 shadow-soft">
               <div className="flex items-center gap-2 border-b border-cream-border/55 pb-2">
                 <Smile size={16} className="text-pastel-orange stroke-[2.5]" />
-                <span className="text-xs font-black text-warm-gray-dark font-sans">지도 탐색 필터</span>
+                <span className="text-xs font-black text-warm-gray-dark font-sans">탐험 전용 영역 필터</span>
               </div>
               <SearchBox filters={filters} setFilters={setFilters} />
               <RegionFilter filters={filters} setFilters={setFilters} />
@@ -1485,19 +1371,17 @@ getRouteHeroImage(route)
               <div className="flex items-center justify-between border-b border-cream-border/50 pb-2">
                 <div>
                   <span className="text-xs sm:text-sm font-black text-warm-gray-dark flex items-center gap-1.5 px-1 font-sans">
-                    🗺️ 실제 지도 기반 지도 아레나
+                    🗺️ 실제 지도 기반 탐험 아레나
                   </span>
                 </div>
                 <span className="text-[9px] bg-pastel-orange-soft border border-[#FFE8DA] font-black px-2.5 py-1 rounded-full text-pastel-orange">
-                  선택 지역: {selectedRoute?.region || '장미길'}
+                  현 위치: {selectedRoute?.region || '장미길'}
                 </span>
               </div>
 
               <MapView
                 selectedRoute={selectedRoute}
                 activeWalk={activeWalk}
-                startLocation={startLocation}
-                onMapCenterChange={setMapCenterCandidate}
               />
             </section>
           </div>
@@ -1509,13 +1393,13 @@ getRouteHeroImage(route)
         <main className="max-w-xl mx-auto px-5 pt-8 pb-32 flex-1 w-full flex flex-col animate-[fadeIn_0.35s_ease-out]">
           <header className="mb-5">
             <span className="text-[10px] bg-pastel-orange-soft border border-[#FFE8DA] text-pastel-orange px-2.5 py-1 rounded-full font-black uppercase">
-              커뮤니티
+              우리끼리 속닥속닥 💬
             </span>
             <h1 className="text-2xl font-black text-warm-gray-dark mt-2 leading-none">
-              동네 산책 후기 게시판
+              동네 대장 수다 광장 🐾
             </h1>
             <p className="text-[11px] text-warm-gray mt-1.5 font-semibold">
-              산책 장소 후기와 주의사항을 공유하는 공간입니다.
+              크림마을에 거주하는 장미길, 소리숲 집사/댕냥 회원님들이 실시간 수다를 나누는 사랑방가이다냥!
             </p>
           </header>
 
@@ -1524,12 +1408,12 @@ getRouteHeroImage(route)
             <form onSubmit={handleAddPost} className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
                 <span className="text-base">📝</span>
-                <span className="text-xs font-black text-warm-gray-dark">새 후기 작성</span>
+                <span className="text-xs font-black text-warm-gray-dark">새로운 수다글씨 쓰기</span>
               </div>
               <textarea
                 value={newPostText}
                 onChange={(e) => setNewPostText(e.target.value)}
-                placeholder="오늘 산책한 장소, 동반 가능 여부, 배변시설 상태, 혼잡도 등을 공유해 주세요."
+                placeholder="오늘 어떤 길을 걸으셨나요? 망고가 봤던 볕 좋은 지점이나, 장군이의 안전 횡단보도 이용 소감을 자유롭게 들려주세요!"
                 className="w-full bg-white border border-cream-border/80 rounded-2xl p-3 text-xs font-semibold text-warm-gray-dark outline-none h-20 resize-none focus:border-pastel-orange transition-colors"
                 maxLength={200}
               />
@@ -1539,7 +1423,7 @@ getRouteHeroImage(route)
                   type="submit"
                   className="bg-zinc-900 border border-zinc-950 hover:bg-zinc-800 text-white text-[11px] font-black px-4.5 py-2 rounded-xl transition-colors leading-none btn-squishy cursor-pointer"
                 >
-                  후기 등록
+                  수다 발송 🚀
                 </button>
               </div>
             </form>
@@ -1628,11 +1512,11 @@ getRouteHeroImage(route)
       {/* 4. Footer info */}
       <footer className="bg-white border-t-2 border-cream-border/55 py-6 mt-6 pb-28 text-center text-xs text-warm-gray/80" id="main-footer">
         <div className="max-w-7xl mx-auto px-5 flex flex-col sm:flex-row items-center justify-between gap-3.5 font-medium">
-          <p>© 2026 Cream Village. 반려견 산책 루트 추천 프로젝트</p>
+          <p>© 2026 Cream Village. "어리숙한 발걸음이 모여 따뜻한 비밀 지도가 되는 날까지"</p>
           <div className="flex items-center gap-4 text-warm-gray font-black">
-            <span className="hover:text-pastel-orange cursor-help transition-colors">데이터 출처</span>
-            <span className="hover:text-pastel-orange cursor-help transition-colors">루트 추천</span>
-            <span className="hover:text-pastel-orange cursor-help transition-colors">안전 안내</span>
+            <span className="hover:text-pastel-orange cursor-help transition-colors">📜 망고 서고</span>
+            <span className="hover:text-pastel-orange cursor-help transition-colors">🐾 뭉치 걷기본부</span>
+            <span className="hover:text-pastel-orange cursor-help transition-colors">🛡️ 장군 안심연대</span>
           </div>
         </div>
       </footer>
@@ -1641,7 +1525,7 @@ getRouteHeroImage(route)
       <nav className="fixed bottom-5 left-1/2 -translate-x-1/2 w-[92%] max-w-md bg-white/95 backdrop-blur-xl rounded-[32px] shadow-[0_12px_45px_rgba(0,0,0,0.12)] border border-[#FAEFDF] px-6 py-2.5 flex items-center justify-between z-50 animate-[slideUp_0.4s_cubic-bezier(0.175,0.885,0.32,1.275)] transition-all">
         {[
           { tab: 'home', icon: (active: boolean) => <Home size={18} className={active ? 'text-pastel-orange stroke-[2.5]' : 'text-warm-gray'} />, label: '홈' },
-          { tab: 'explore', icon: (active: boolean) => <Map size={18} className={active ? 'text-pastel-orange stroke-[2.5]' : 'text-warm-gray'} />, label: '지도' },
+          { tab: 'explore', icon: (active: boolean) => <Map size={18} className={active ? 'text-pastel-orange stroke-[2.5]' : 'text-warm-gray'} />, label: '탐험' },
           { tab: 'routes', icon: (active: boolean) => <Compass size={18} className={active ? 'text-pastel-orange stroke-[2.5]' : 'text-warm-gray'} />, label: '루트' },
           { tab: 'community', icon: (active: boolean) => <MessageSquare size={18} className={active ? 'text-pastel-orange stroke-[2.5]' : 'text-warm-gray'} />, label: '커뮤니티' },
           { tab: 'profile', icon: (active: boolean) => <User size={18} className={active ? 'text-pastel-orange stroke-[2.5]' : 'text-warm-gray'} />, label: '정보' },
