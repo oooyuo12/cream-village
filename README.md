@@ -1,20 +1,27 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Cream Village
 
-# Run and deploy your AI Studio app
+반려견 산책 경로를 지도 기반으로 다루는 웹 프로젝트입니다.
 
-This contains everything you need to run your app locally.
+기존 `dog-route-map` 프로토타입에서 시작해
+UI와 기능을 개선한 버전입니다.
 
-View your app in AI Studio: https://ai.studio/apps/7de8cf92-70a9-4e05-b24d-9fcf7c18331f
+## Live Demo
+
+https://cream-village.vercel.app
+
+## Tech Stack
+
+- React
+- TypeScript
+- Vite
+- Leaflet / React-Leaflet
+- Tailwind CSS
+- Express
+- Google GenAI
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
+### 1. Install dependencies
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```bash
+npm install
